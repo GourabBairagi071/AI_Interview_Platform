@@ -1,0 +1,480 @@
+* {
+  box-sizing: border-box;
+}
+
+.setup-page {
+  min-height: 100vh;
+  padding: 28px;
+
+  background:
+    radial-gradient(
+      circle at 50% 0%,
+      rgba(124, 58, 237, 0.15),
+      transparent 35%
+    ),
+    #030712;
+
+  color: #f8fafc;
+  font-family:
+    Inter,
+    ui-sans-serif,
+    system-ui,
+    sans-serif;
+}
+
+.back-button {
+  border: 1px solid #26334e;
+  border-radius: 8px;
+
+  background: rgba(9, 18, 36, 0.8);
+
+  color: #cbd5e1;
+
+  padding: 10px 15px;
+
+  cursor: pointer;
+
+  transition: 0.2s;
+}
+
+.back-button:hover {
+  border-color: #7c3aed;
+  color: white;
+}
+
+.setup-container {
+  width: 100%;
+  max-width: 850px;
+
+  margin: 35px auto 0;
+}
+
+/* HEADER */
+
+.setup-header {
+  text-align: center;
+
+  margin-bottom: 30px;
+}
+
+.setup-logo {
+  width: 58px;
+  height: 58px;
+
+  margin: 0 auto 18px;
+
+  display: grid;
+  place-items: center;
+
+  border-radius: 15px;
+
+  background:
+    linear-gradient(
+      135deg,
+      #8b5cf6,
+      #5b21b6
+    );
+
+  border: 1px solid #a855f7;
+
+  font-weight: 900;
+
+  box-shadow:
+    0 0 35px rgba(139, 92, 246, 0.4);
+}
+
+.setup-header h1 {
+  margin: 0;
+
+  font-size: 32px;
+
+  letter-spacing: -0.8px;
+}
+
+.setup-header p {
+  margin-top: 9px;
+
+  color: #94a3b8;
+
+  font-size: 14px;
+}
+
+/* CARD */
+
+.setup-card {
+  padding: 30px;
+
+  border-radius: 16px;
+
+  border: 1px solid #202d47;
+
+  background:
+    linear-gradient(
+      145deg,
+      rgba(10, 19, 37, 0.98),
+      rgba(5, 12, 25, 0.98)
+    );
+
+  box-shadow:
+    0 30px 80px rgba(0, 0, 0, 0.35);
+}
+
+/* SECTION */
+
+.setup-section {
+  margin-bottom: 30px;
+}
+
+.setup-section > label {
+  display: block;
+
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.section-description {
+  margin: 6px 0 16px;
+
+  color: #718096;
+
+  font-size: 12px;
+}
+
+/* ROLE */
+
+.role-grid {
+  display: grid;
+
+  grid-template-columns:
+    repeat(3, 1fr);
+
+  gap: 10px;
+}
+
+.role-option {
+  min-height: 80px;
+
+  display: flex;
+  align-items: center;
+
+  gap: 12px;
+
+  padding: 13px;
+
+  border-radius: 10px;
+
+  border: 1px solid #26334d;
+
+  background: #071123;
+
+  color: #cbd5e1;
+
+  cursor: pointer;
+
+  text-align: left;
+
+  transition:
+    border-color 0.2s,
+    background 0.2s,
+    transform 0.2s;
+}
+
+.role-option:hover {
+  transform: translateY(-2px);
+
+  border-color: #6d28d9;
+}
+
+.role-option.selected {
+  border-color: #8b5cf6;
+
+  background:
+    linear-gradient(
+      135deg,
+      rgba(109, 40, 217, 0.3),
+      rgba(76, 29, 149, 0.12)
+    );
+
+  color: white;
+
+  box-shadow:
+    0 0 20px rgba(124, 58, 237, 0.12);
+}
+
+.role-icon {
+  width: 38px;
+  height: 38px;
+
+  flex-shrink: 0;
+
+  display: grid;
+  place-items: center;
+
+  border-radius: 9px;
+
+  background: rgba(124, 58, 237, 0.15);
+
+  color: #c084fc;
+
+  font-size: 12px;
+  font-weight: 800;
+}
+
+/* DIFFICULTY */
+
+.difficulty-grid {
+  display: grid;
+
+  grid-template-columns:
+    repeat(3, 1fr);
+
+  gap: 10px;
+}
+
+.difficulty-option {
+  min-height: 76px;
+
+  display: flex;
+  align-items: center;
+
+  gap: 12px;
+
+  padding: 13px;
+
+  border-radius: 10px;
+
+  border: 1px solid #26334d;
+
+  background: #071123;
+
+  color: #cbd5e1;
+
+  text-align: left;
+
+  cursor: pointer;
+}
+
+.difficulty-option.selected {
+  border-color: #64748b;
+
+  background: #101b31;
+}
+
+.difficulty-option > span:last-child {
+  display: flex;
+  flex-direction: column;
+
+  gap: 4px;
+}
+
+.difficulty-option strong {
+  color: white;
+
+  font-size: 13px;
+}
+
+.difficulty-option small {
+  color: #718096;
+
+  font-size: 9px;
+}
+
+.difficulty-dot {
+  width: 12px;
+  height: 12px;
+
+  border-radius: 50%;
+
+  flex-shrink: 0;
+}
+
+.easy .difficulty-dot {
+  background: #22c55e;
+
+  box-shadow:
+    0 0 10px rgba(34, 197, 94, 0.5);
+}
+
+.medium .difficulty-dot {
+  background: #f59e0b;
+
+  box-shadow:
+    0 0 10px rgba(245, 158, 11, 0.5);
+}
+
+.hard .difficulty-dot {
+  background: #ef4444;
+
+  box-shadow:
+    0 0 10px rgba(239, 68, 68, 0.5);
+}
+
+/* SUMMARY */
+
+.interview-summary {
+  min-height: 78px;
+
+  display: flex;
+  align-items: center;
+
+  padding: 16px;
+
+  border-radius: 10px;
+
+  border: 1px solid #1d2941;
+
+  background: rgba(5, 13, 28, 0.8);
+
+  margin-bottom: 18px;
+}
+
+.summary-item {
+  flex: 1;
+
+  display: flex;
+  flex-direction: column;
+
+  gap: 5px;
+
+  text-align: center;
+}
+
+.summary-item span {
+  color: #64748b;
+
+  font-size: 10px;
+}
+
+.summary-item strong {
+  color: #e2e8f0;
+
+  font-size: 12px;
+}
+
+.summary-divider {
+  width: 1px;
+  height: 35px;
+
+  background: #25314a;
+}
+
+/* ERROR */
+
+.setup-error {
+  padding: 12px 14px;
+
+  margin-bottom: 15px;
+
+  border-radius: 8px;
+
+  border: 1px solid #7f1d1d;
+
+  background: rgba(127, 29, 29, 0.2);
+
+  color: #fca5a5;
+
+  font-size: 12px;
+}
+
+/* BUTTON */
+
+.start-interview-button {
+  width: 100%;
+  height: 52px;
+
+  border: none;
+  border-radius: 9px;
+
+  background:
+    linear-gradient(
+      90deg,
+      #7c3aed,
+      #6d28d9
+    );
+
+  color: white;
+
+  font-size: 14px;
+  font-weight: 700;
+
+  cursor: pointer;
+
+  box-shadow:
+    0 10px 30px rgba(109, 40, 217, 0.3);
+
+  transition:
+    transform 0.2s,
+    box-shadow 0.2s,
+    opacity 0.2s;
+}
+
+.start-interview-button:hover {
+  transform: translateY(-2px);
+
+  box-shadow:
+    0 15px 35px rgba(109, 40, 217, 0.42);
+}
+
+.start-interview-button:disabled {
+  cursor: not-allowed;
+
+  opacity: 0.55;
+
+  transform: none;
+}
+
+.start-interview-button span {
+  margin-left: 10px;
+
+  font-size: 18px;
+}
+
+/* FOOTER */
+
+.setup-footer {
+  margin-top: 16px;
+
+  text-align: center;
+
+  color: #475569;
+
+  font-size: 10px;
+}
+
+/* RESPONSIVE */
+
+@media (max-width: 700px) {
+
+  .setup-page {
+    padding: 18px;
+  }
+
+  .setup-container {
+    margin-top: 25px;
+  }
+
+  .setup-card {
+    padding: 20px;
+  }
+
+  .role-grid,
+  .difficulty-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .setup-header h1 {
+    font-size: 25px;
+  }
+
+  .interview-summary {
+    flex-direction: column;
+
+    gap: 14px;
+  }
+
+  .summary-divider {
+    width: 80%;
+    height: 1px;
+  }
+
+}
