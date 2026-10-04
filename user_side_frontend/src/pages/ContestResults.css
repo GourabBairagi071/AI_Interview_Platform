@@ -1,0 +1,348 @@
+/* Contest Results Styles */
+.cr-page {
+  min-height: 100vh;
+  background-color: #0b0f19;
+  color: #f1f5f9;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Inter", sans-serif;
+  display: flex;
+  flex-direction: column;
+}
+
+.cr-loading,
+.cr-error {
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 40px 24px;
+}
+
+.cr-spinner {
+  width: 44px;
+  height: 44px;
+  border: 4px solid rgba(99, 102, 241, 0.2);
+  border-top-color: #6366f1;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  margin-bottom: 20px;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.cr-header {
+  background: #0f172a;
+  border-bottom: 1px solid #1e293b;
+  padding: 24px 0;
+}
+
+.cr-header-inner {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 24px;
+}
+
+.cr-nav-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.cr-back-btn {
+  background: transparent;
+  border: 1px solid #334155;
+  color: #cbd5e1;
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.cr-back-btn:hover {
+  background: #1e293b;
+  color: #fff;
+}
+
+.cr-btn {
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  border: none;
+}
+
+.cr-btn-primary {
+  background: #6366f1;
+  color: #fff;
+}
+
+.cr-btn-secondary {
+  background: #1e293b;
+  color: #cbd5e1;
+  border: 1px solid #334155;
+}
+
+.cr-btn-leaderboard {
+  background: #1e293b;
+  color: #818cf8;
+  border: 1px solid #4f46e5;
+}
+
+.cr-btn-leaderboard:hover {
+  background: #4f46e5;
+  color: #fff;
+}
+
+.cr-category {
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: #818cf8;
+  display: block;
+  margin-bottom: 4px;
+}
+
+.cr-hero h1 {
+  font-size: 1.8rem;
+  font-weight: 800;
+  color: #f8fafc;
+  margin: 0 0 6px 0;
+}
+
+.cr-date {
+  color: #94a3b8;
+  font-size: 0.9rem;
+  margin: 0;
+}
+
+/* Body */
+.cr-body {
+  max-width: 1200px;
+  width: 100%;
+  margin: 32px auto;
+  padding: 0 24px;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+}
+
+/* Metric Cards */
+.cr-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+}
+
+.cr-card {
+  background: #0f172a;
+  border: 1px solid #1e293b;
+  border-radius: 12px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+}
+
+.metric-card.highlight {
+  background: linear-gradient(145deg, #131d38, #0f172a);
+  border-color: #4f46e5;
+  box-shadow: 0 4px 20px rgba(99, 102, 241, 0.15);
+}
+
+.metric-label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #94a3b8;
+  letter-spacing: 0.05em;
+  margin-bottom: 8px;
+}
+
+.metric-val-big {
+  font-size: 2rem;
+  font-weight: 800;
+  color: #f8fafc;
+  line-height: 1;
+  margin-bottom: 8px;
+}
+
+.metric-sub {
+  font-size: 1rem;
+  color: #64748b;
+  font-weight: 600;
+}
+
+.metric-desc {
+  font-size: 0.8rem;
+  color: #64748b;
+}
+
+.percentile-tag {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #34d399;
+  background: rgba(16, 185, 129, 0.15);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  padding: 3px 8px;
+  border-radius: 6px;
+  align-self: flex-start;
+  margin-top: 4px;
+}
+
+/* Section */
+.cr-section h2 {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #f8fafc;
+  margin: 0 0 16px 0;
+}
+
+/* Problem Breakdown Grid */
+.problem-breakdown-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 16px;
+}
+
+.prob-perf-card {
+  background: #0f172a;
+  border: 1px solid #1e293b;
+  border-radius: 10px;
+  padding: 16px;
+  transition: all 0.2s;
+}
+
+.prob-perf-card.card-solved {
+  border-color: #10b981;
+  background: rgba(16, 185, 129, 0.05);
+}
+
+.prob-perf-card.card-attempted {
+  border-color: #f59e0b;
+}
+
+.prob-perf-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.prob-perf-label {
+  font-weight: 800;
+  font-size: 1rem;
+  color: #818cf8;
+}
+
+.prob-status-badge {
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: #1e293b;
+  color: #94a3b8;
+}
+
+.badge-solved {
+  background: rgba(16, 185, 129, 0.2);
+  color: #34d399;
+}
+
+.badge-attempted {
+  background: rgba(245, 158, 11, 0.2);
+  color: #fbbf24;
+}
+
+.prob-perf-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #e2e8f0;
+  margin: 0 0 12px 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.prob-perf-metrics {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.8rem;
+  padding-top: 10px;
+  border-top: 1px solid #1e293b;
+}
+
+.prob-perf-metrics .k {
+  color: #64748b;
+  margin-right: 4px;
+}
+
+.prob-perf-metrics .v {
+  font-weight: 700;
+  color: #f1f5f9;
+}
+
+/* Submission Table */
+.cr-table-wrap {
+  background: #0f172a;
+  border: 1px solid #1e293b;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.cr-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+.cr-table th {
+  background: #131d35;
+  color: #94a3b8;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  padding: 12px 16px;
+  border-bottom: 1px solid #1e293b;
+}
+
+.cr-table td {
+  padding: 12px 16px;
+  border-bottom: 1px solid #1e293b;
+  font-size: 0.85rem;
+  color: #cbd5e1;
+}
+
+.font-mono {
+  font-family: "JetBrains Mono", Consolas, monospace;
+}
+
+.font-bold {
+  font-weight: 700;
+  color: #f8fafc;
+}
+
+.sub-verdict-tag {
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 4px;
+}
+
+.verdict-pass {
+  background: rgba(16, 185, 129, 0.2);
+  color: #34d399;
+}
+
+.verdict-fail {
+  background: rgba(239, 68, 68, 0.2);
+  color: #f87171;
+}
+
+.no-sub-msg {
+  color: #64748b;
+  font-size: 0.9rem;
+}

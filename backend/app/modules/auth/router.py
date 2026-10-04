@@ -21,6 +21,7 @@ from app.modules.auth.schema import (
     ResetPasswordResponse,
     ProfileResponse,
     ProfileUpdateRequest,
+    GoogleAuthRequest,
 )
 from app.modules.auth.service import (
     authenticate_user,
@@ -29,6 +30,7 @@ from app.modules.auth.service import (
     get_or_create_profile,
     reset_password,
     update_profile,
+    authenticate_google_user,
 )
 
 
@@ -69,6 +71,8 @@ async def register(
     return user
 
 
+from app.core.rate_limit import limit_login_attempts
+
 # ============================================================
 # LOGIN
 # ============================================================
@@ -76,6 +80,7 @@ async def register(
 @router.post(
     "/login",
     response_model=LoginResponse,
+    dependencies=[Depends(limit_login_attempts)],
 )
 async def login(
     data: LoginRequest,
@@ -100,6 +105,40 @@ async def login(
 
     access_token = create_access_token(
     str(user.id)
+    )
+
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "user": user,
+    }
+# ============================================================
+# GOOGLE LOGIN / REGISTER
+# ============================================================
+
+@router.post(
+    "/google",
+    response_model=LoginResponse,
+)
+async def google_auth(
+    data: GoogleAuthRequest,
+    db: AsyncSession = Depends(get_db),
+):
+
+    try:
+        user = await authenticate_google_user(
+            db=db,
+            credential=data.credential,
+        )
+
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=str(exc),
+        ) from exc
+
+    access_token = create_access_token(
+        str(user.id)
     )
 
     return {

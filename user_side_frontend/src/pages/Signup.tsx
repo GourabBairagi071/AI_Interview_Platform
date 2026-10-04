@@ -1,9 +1,16 @@
 import { useState } from "react"
 import type { FormEvent } from "react"
 import { Link, useNavigate } from "react-router-dom"
+import { GoogleLogin } from "@react-oauth/google"
 import "./Login.css"
 
 const API_BASE_URL = "http://127.0.0.1:8000/api/v1"
+
+type GoogleCredentialResponse = {
+  credential?: string
+  clientId?: string
+  select_by?: string
+}
 
 function Signup() {
   const navigate = useNavigate()
@@ -14,6 +21,7 @@ function Signup() {
   const [confirmPassword, setConfirmPassword] = useState("")
 
   const [loading, setLoading] = useState(false)
+  const [googleLoading, setGoogleLoading] = useState(false)
   const [error, setError] = useState("")
 
   const [showPassword, setShowPassword] = useState(false)
@@ -27,15 +35,18 @@ function Signup() {
 
     setError("")
 
+    if (!fullName.trim()) {
+      setError("Please enter your full name.")
+      return
+    }
+
     if (password !== confirmPassword) {
       setError("Passwords do not match.")
       return
     }
 
     if (password.length < 8) {
-      setError(
-        "Password must be at least 8 characters long.",
-      )
+      setError("Password must be at least 8 characters long.")
       return
     }
 
@@ -43,7 +54,7 @@ function Signup() {
 
     try {
       const response = await fetch(
-        `${API_BASE_URL}/auth/signup`,
+        `${API_BASE_URL}/auth/register`,
         {
           method: "POST",
           headers: {
@@ -51,8 +62,8 @@ function Signup() {
             Accept: "application/json",
           },
           body: JSON.stringify({
-            full_name: fullName,
-            email,
+            full_name: fullName.trim(),
+            email: email.trim(),
             password,
           }),
         },
@@ -78,12 +89,95 @@ function Signup() {
     }
   }
 
+  async function handleGoogleSuccess(
+    response: GoogleCredentialResponse,
+  ) {
+    setError("")
+
+    if (!response.credential) {
+      setError("Google authentication failed.")
+      return
+    }
+
+    setGoogleLoading(true)
+
+    try {
+      /*
+       * IMPORTANT:
+       * Your backend must provide this endpoint.
+       *
+       * Example:
+       * POST /api/v1/auth/google
+       *
+       * with:
+       * {
+       *   "credential": "GOOGLE_ID_TOKEN"
+       * }
+       */
+
+      const backendResponse = await fetch(
+        `${API_BASE_URL}/auth/google`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json",
+          },
+          body: JSON.stringify({
+            credential: response.credential,
+          }),
+        },
+      )
+
+      const data = await backendResponse.json()
+
+      if (!backendResponse.ok) {
+        throw new Error(
+          data.detail || "Google registration failed",
+        )
+      }
+
+      /*
+       * Adjust these keys according to your backend response.
+       */
+
+      if (data.access_token) {
+        localStorage.setItem(
+          "access_token",
+          data.access_token,
+        )
+      }
+
+      if (data.token) {
+        localStorage.setItem(
+          "token",
+          data.token,
+        )
+      }
+
+      navigate("/dashboard")
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Google registration failed.",
+      )
+    } finally {
+      setGoogleLoading(false)
+    }
+  }
+
+  function handleGoogleError() {
+    setGoogleLoading(false)
+    setError(
+      "Google authentication failed. Please try again.",
+    )
+  }
+
   return (
     <main className="login-page">
 
-      {/* =====================================================
-          ANIMATED BACKGROUND
-      ===================================================== */}
+      {/* BACKGROUND */}
 
       <div className="background-effects">
         <div className="glow glow-one" />
@@ -98,9 +192,7 @@ function Signup() {
         <span className="particle p6" />
       </div>
 
-      {/* =====================================================
-          LEFT HERO
-      ===================================================== */}
+      {/* LEFT HERO */}
 
       <section className="login-hero">
 
@@ -140,9 +232,7 @@ function Signup() {
             preparation.
           </p>
 
-          {/* =================================================
-              ROBOT
-          ================================================= */}
+          {/* ROBOT */}
 
           <div className="robot-stage">
 
@@ -195,8 +285,6 @@ function Signup() {
 
             </div>
 
-            {/* Floating cards */}
-
             <div className="floating-card code-card">
               <span className="mini-icon">
                 &lt;/&gt;
@@ -225,9 +313,7 @@ function Signup() {
 
           </div>
 
-          {/* =================================================
-              STATS
-          ================================================= */}
+          {/* STATS */}
 
           <div className="stats">
 
@@ -261,9 +347,7 @@ function Signup() {
 
       </section>
 
-      {/* =====================================================
-          RIGHT SIGNUP PANEL
-      ===================================================== */}
+      {/* RIGHT PANEL */}
 
       <section className="login-panel">
 
@@ -271,7 +355,7 @@ function Signup() {
 
           <div className="card-top-line" />
 
-          {/* Header */}
+          {/* HEADER */}
 
           <div className="login-header">
 
@@ -290,23 +374,36 @@ function Signup() {
 
           </div>
 
-          {/* Google */}
+          {/* GOOGLE */}
 
-          <button
-            type="button"
-            className="google-button"
-            onClick={() =>
-              setError(
-                "Google signup is coming soon.",
-              )
-            }
-          >
-            <span className="google-g">
-              G
-            </span>
+          <div className="google-login-wrapper">
 
-            Continue with Google
-          </button>
+            {googleLoading ? (
+              <button
+                type="button"
+                className="google-button"
+                disabled
+              >
+                <span className="google-g">
+                  G
+                </span>
+
+                Creating account...
+              </button>
+            ) : (
+              <GoogleLogin
+                onSuccess={handleGoogleSuccess}
+                onError={handleGoogleError}
+                useOneTap={false}
+                theme="outline"
+                size="large"
+                text="continue_with"
+                shape="rectangular"
+                width="100%"
+              />
+            )}
+
+          </div>
 
           <div className="divider">
             <span />
@@ -314,13 +411,11 @@ function Signup() {
             <span />
           </div>
 
-          {/* =================================================
-              FORM
-          ================================================= */}
+          {/* FORM */}
 
           <form onSubmit={handleSubmit}>
 
-            {/* Full Name */}
+            {/* FULL NAME */}
 
             <div className="field">
 
@@ -336,9 +431,7 @@ function Signup() {
                   type="text"
                   value={fullName}
                   onChange={(event) =>
-                    setFullName(
-                      event.target.value,
-                    )
+                    setFullName(event.target.value)
                   }
                   placeholder="Enter your full name"
                   required
@@ -348,7 +441,7 @@ function Signup() {
 
             </div>
 
-            {/* Email */}
+            {/* EMAIL */}
 
             <div className="field">
 
@@ -364,9 +457,7 @@ function Signup() {
                   type="email"
                   value={email}
                   onChange={(event) =>
-                    setEmail(
-                      event.target.value,
-                    )
+                    setEmail(event.target.value)
                   }
                   placeholder="you@example.com"
                   required
@@ -376,7 +467,7 @@ function Signup() {
 
             </div>
 
-            {/* Password */}
+            {/* PASSWORD */}
 
             <div className="field">
 
@@ -396,9 +487,7 @@ function Signup() {
                   }
                   value={password}
                   onChange={(event) =>
-                    setPassword(
-                      event.target.value,
-                    )
+                    setPassword(event.target.value)
                   }
                   placeholder="Create a password"
                   required
@@ -410,21 +499,19 @@ function Signup() {
                   className="password-toggle"
                   onClick={() =>
                     setShowPassword(
-                      !showPassword,
+                      (value) => !value,
                     )
                   }
                   aria-label="Toggle password visibility"
                 >
-                  {showPassword
-                    ? "◉"
-                    : "○"}
+                  {showPassword ? "◉" : "○"}
                 </button>
 
               </div>
 
             </div>
 
-            {/* Confirm Password */}
+            {/* CONFIRM PASSWORD */}
 
             <div className="field">
 
@@ -460,7 +547,7 @@ function Signup() {
                   className="password-toggle"
                   onClick={() =>
                     setShowConfirmPassword(
-                      !showConfirmPassword,
+                      (value) => !value,
                     )
                   }
                   aria-label="Toggle password visibility"
@@ -474,7 +561,7 @@ function Signup() {
 
             </div>
 
-            {/* Error */}
+            {/* ERROR */}
 
             {error && (
               <div className="error-box">
@@ -483,7 +570,7 @@ function Signup() {
               </div>
             )}
 
-            {/* Submit */}
+            {/* SUBMIT */}
 
             <button
               type="submit"
@@ -501,20 +588,22 @@ function Signup() {
                   →
                 </span>
               )}
+
             </button>
 
           </form>
 
-          {/* Login link */}
+          {/* LOGIN */}
 
           <div className="signup-line">
             Already have an account?
+
             <Link to="/login">
               Sign in
             </Link>
           </div>
 
-          {/* Security */}
+          {/* SECURITY */}
 
           <div className="security-card">
 
@@ -523,6 +612,7 @@ function Signup() {
             </div>
 
             <div>
+
               <strong>
                 Secure Registration
               </strong>
@@ -531,6 +621,7 @@ function Signup() {
                 Your credentials are protected
                 with industry-standard encryption.
               </p>
+
             </div>
 
           </div>

@@ -8,6 +8,54 @@ from app.core.database import Base
 from app.modules.auth.model import User
 from app.modules.resume.model import Resume
 from app.modules.interview.model import Interview
+from app.modules.anticheating.model import AntiCheatingEvent
+from app.modules.coding.model import (
+    CodingProblem,
+    CodingSubmission,
+    Contest,
+    ContestProblem,
+    ContestRegistration,
+    ContestSubmission,
+    ContestParticipantStats,
+)
+from app.modules.learning.model import (
+    LearningProfile,
+    SkillPerformance,
+    LearningRoadmap,
+    LearningResource,
+    DailyPracticePlan,
+    WeeklyGoal,
+    LearningRecommendation,
+)
+from app.modules.practice.model import (
+    PracticeProgress,
+    PracticeQuestion,
+)
+from app.modules.achievements.model import (
+    AchievementDefinition,
+    UserAchievement,
+)
+from app.modules.notifications.model import (
+    Notification,
+)
+from app.modules.rag.model import (
+    InterviewQuestionVector,
+)
+from app.modules.payments.model import (
+    SubscriptionPlan,
+    UserSubscription,
+    PaymentTransaction,
+    Coupon,
+    CouponUsage,
+    Invoice,
+)
+from app.modules.support.model import (
+    SupportTicket,
+    SupportTicketMessage,
+    Feedback,
+    FAQ,
+    HelpArticle,
+)
 
 config = context.config
 

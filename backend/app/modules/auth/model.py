@@ -58,6 +58,20 @@ class User(Base):
         nullable=True,
     )
 
+    role: Mapped[str] = mapped_column(
+        String(50),
+        default="CANDIDATE",
+        nullable=False,
+        index=True,
+    )
+
+    is_admin: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        nullable=False,
+        index=True,
+    )
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
@@ -152,6 +166,60 @@ class UserProfile(Base):
     )
 
     resume_url: Mapped[str | None] = mapped_column(
+        String(500),
+        nullable=True,
+    )
+
+    headline: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+    )
+
+    avatar_url: Mapped[str | None] = mapped_column(
+        String(500),
+        nullable=True,
+    )
+
+    location: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+    )
+
+    college: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+    )
+
+    degree: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+    )
+
+    graduation_year: Mapped[int | None] = mapped_column(
+        nullable=True,
+    )
+
+    target_role: Mapped[str | None] = mapped_column(
+        String(100),
+        nullable=True,
+    )
+
+    experience_level: Mapped[str | None] = mapped_column(
+        String(50),
+        nullable=True,
+    )
+
+    github_url: Mapped[str | None] = mapped_column(
+        String(500),
+        nullable=True,
+    )
+
+    linkedin_url: Mapped[str | None] = mapped_column(
+        String(500),
+        nullable=True,
+    )
+
+    portfolio_url: Mapped[str | None] = mapped_column(
         String(500),
         nullable=True,
     )

@@ -1,7 +1,13 @@
 import { useEffect, useMemo, useState } from "react"
 import { useNavigate, useParams } from "react-router-dom"
 
-import { getInterview } from "../services/api"
+import {
+  getInterview,
+  getAntiCheatingSummary,
+  getAntiCheatingEvents,
+  type AntiCheatingSummary,
+  type AntiCheatingEvent,
+} from "../services/api"
 
 import "./Results.css"
 
@@ -272,6 +278,12 @@ function Results() {
   const [interview, setInterview] =
     useState<Interview | null>(null)
 
+  const [antiCheatingSummary, setAntiCheatingSummary] =
+    useState<AntiCheatingSummary | null>(null)
+
+  const [antiCheatingEvents, setAntiCheatingEvents] =
+    useState<AntiCheatingEvent[]>([])
+
   const [loading, setLoading] =
     useState(true)
 
@@ -297,8 +309,11 @@ function Results() {
 
       try {
 
-        const response =
-          await getInterview(id)
+        const [response, summaryRes, eventsRes] = await Promise.all([
+          getInterview(id),
+          getAntiCheatingSummary(id).catch(() => null),
+          getAntiCheatingEvents(id).catch(() => ({ events: [], total: 0 })),
+        ])
 
         const result =
           response as ResultResponse
@@ -314,6 +329,8 @@ function Results() {
         }
 
         setInterview(data)
+        if (summaryRes) setAntiCheatingSummary(summaryRes)
+        if (eventsRes?.events) setAntiCheatingEvents(eventsRes.events)
 
       } catch (err) {
 
@@ -1200,6 +1217,165 @@ function Results() {
                 </p>
 
               </div>
+
+            </div>
+
+          </div>
+
+        </section>
+
+
+        {/* ====================================================
+            INTERVIEW INTEGRITY & ANTI-CHEATING REPORT
+            ==================================================== */}
+
+        <section className="result-section">
+
+          <div className="section-heading">
+
+            <div className="section-number">
+              04
+            </div>
+
+            <div>
+
+              <h2>
+                Interview Integrity & Anti-Cheating
+              </h2>
+
+              <p>
+                Automated computer-vision analysis of candidate presence, identity, and session authenticity.
+              </p>
+
+            </div>
+
+          </div>
+
+          <div className="integrity-overview-card">
+
+            <div className="integrity-status-banner">
+
+              <div className="integrity-status-info">
+
+                <span className="integrity-tag">
+                  PROCTORING ASSESSMENT STATUS
+                </span>
+
+                <div className="integrity-status-row">
+
+                  <span
+                    className={`integrity-status-badge status-${(
+                      antiCheatingSummary?.overall_status || "CLEAR"
+                    ).toLowerCase()}`}
+                  >
+                    <span className="integrity-dot" />
+                    {antiCheatingSummary?.overall_status === "CLEAR"
+                      ? "Integrity Verified • CLEAR"
+                      : antiCheatingSummary?.overall_status === "REVIEW"
+                        ? "Review Advised • REVIEW"
+                        : "Suspicious Activity Detected • SUSPICIOUS"}
+                  </span>
+
+                  <span className="integrity-risk-badge">
+                    Risk Score:{" "}
+                    <strong>
+                      {antiCheatingSummary?.risk_score ?? 0}
+                    </strong>{" "}
+                    / 100
+                  </span>
+
+                </div>
+
+              </div>
+
+            </div>
+
+            {/* INTEGRITY METRICS GRID */}
+            <div className="integrity-metrics-grid">
+
+              <div className="integrity-metric">
+                <span>Total Suspicious Events</span>
+                <strong>{antiCheatingSummary?.total_events ?? 0}</strong>
+              </div>
+
+              <div className="integrity-metric">
+                <span>Face Missing Events</span>
+                <strong>{antiCheatingSummary?.face_missing_events ?? 0}</strong>
+              </div>
+
+              <div className="integrity-metric">
+                <span>Multiple-Person Events</span>
+                <strong>{antiCheatingSummary?.multiple_person_events ?? 0}</strong>
+              </div>
+
+              <div className="integrity-metric">
+                <span>Identity Mismatch Events</span>
+                <strong>{antiCheatingSummary?.identity_mismatch_events ?? 0}</strong>
+              </div>
+
+              <div className="integrity-metric">
+                <span>Mobile / Device Events</span>
+                <strong>{antiCheatingSummary?.device_events ?? 0}</strong>
+              </div>
+
+              <div className="integrity-metric">
+                <span>Suspicious Duration</span>
+                <strong>{antiCheatingSummary?.total_suspicious_duration ?? 0}s</strong>
+              </div>
+
+            </div>
+
+            {/* EVENTS TIMELINE */}
+            <div className="integrity-events-section">
+
+              <h4>Incident Timeline</h4>
+
+              {antiCheatingEvents.length === 0 ? (
+                <div className="integrity-empty-state">
+                  <span className="integrity-empty-icon">✓</span>
+                  <div>
+                    <strong>No suspicious activity detected.</strong>
+                    <p>
+                      Candidate maintained continuous face presence and session compliance throughout the interview.
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="integrity-events-list">
+                  {antiCheatingEvents.map((evt, idx) => (
+                    <div
+                      key={evt.id || idx}
+                      className={`integrity-event-card severity-${evt.severity.toLowerCase()}`}
+                    >
+                      <div className="integrity-event-top">
+                        <div className="event-badges">
+                          <span className="event-type-badge">
+                            {evt.event_type.replace(/_/g, " ")}
+                          </span>
+                          <span
+                            className={`event-severity-badge severity-${evt.severity.toLowerCase()}`}
+                          >
+                            {evt.severity} SEVERITY
+                          </span>
+                        </div>
+                        <span className="event-time">
+                          {formatDate(evt.timestamp)}
+                        </span>
+                      </div>
+                      <p className="event-desc">{evt.description}</p>
+                      <div className="event-footer">
+                        <span>
+                          Duration: <strong>{evt.duration}s</strong>
+                        </span>
+                        <span>
+                          Confidence:{" "}
+                          <strong>{Math.round(evt.confidence * 100)}%</strong>
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
 
             </div>
 

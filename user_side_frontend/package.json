@@ -11,6 +11,8 @@
   },
   "dependencies": {
     "@d-id/client-sdk": "^2.0.6",
+    "@monaco-editor/react": "^4.7.0",
+    "@react-oauth/google": "^0.13.5",
     "@tailwindcss/vite": "^4.3.3",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",

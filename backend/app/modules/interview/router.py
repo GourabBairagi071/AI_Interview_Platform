@@ -16,14 +16,19 @@ from app.modules.interview.schema import (
     InterviewCreateResponse,
     InterviewListResponse,
     InterviewResponse,
+    TranscriptResponse,
+    TranscriptSyncRequest,
 )
+from app.modules.payments.service import check_quota
 from app.modules.interview.service import (
     complete_interview,
     create_interview,
     get_followup_question,
+    get_structured_transcript,
     get_user_interview,
     get_user_interviews,
     save_interview_answers,
+    save_structured_transcript,
     start_interview,
 )
 
@@ -44,12 +49,22 @@ async def create_new_interview(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    allowed, reason = await check_quota(db, current_user.id, "ai_interview")
+    if not allowed:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=reason,
+        )
+
     try:
         interview = await create_interview(
             db=db,
             user_id=current_user.id,
             job_role=data.job_role,
             difficulty=data.difficulty,
+            experience_level=data.experience_level or "Mid-Level",
+            interview_type=data.interview_type or "Technical",
+            number_of_questions=data.number_of_questions or 5,
         )
     except ValueError as exc:
         raise HTTPException(
@@ -260,6 +275,7 @@ async def generate_followup(
             question=data.question,
             answer=data.answer,
             conversation_history=data.conversation_history,
+            db=db,
         )
 
     except ValueError as exc:
@@ -269,3 +285,67 @@ async def generate_followup(
         )
 
     return result
+
+
+@router.get(
+    "/{interview_id}/transcript",
+    response_model=TranscriptResponse,
+    summary="Get structured interview conversation transcript entries",
+)
+async def get_transcript(
+    interview_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    interview = await get_user_interview(
+        db,
+        current_user.id,
+        interview_id,
+    )
+
+    if not interview:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Interview not found",
+        )
+
+    entries = get_structured_transcript(interview)
+    return {
+        "interview_id": interview.id,
+        "entries": entries,
+        "total_entries": len(entries),
+    }
+
+
+@router.post(
+    "/{interview_id}/transcript",
+    response_model=TranscriptResponse,
+    summary="Save or update structured interview conversation transcript entries",
+)
+async def sync_transcript(
+    interview_id: UUID,
+    data: TranscriptSyncRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    interview = await get_user_interview(
+        db,
+        current_user.id,
+        interview_id,
+    )
+
+    if not interview:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Interview not found",
+        )
+
+    entries_dict = [entry.model_dump() for entry in data.entries]
+    updated_interview = await save_structured_transcript(db, interview, entries_dict)
+    entries = get_structured_transcript(updated_interview)
+
+    return {
+        "interview_id": updated_interview.id,
+        "entries": entries,
+        "total_entries": len(entries),
+    }

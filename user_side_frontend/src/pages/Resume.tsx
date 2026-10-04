@@ -1,15 +1,16 @@
-import { useEffect, useState } from "react"
+import { useEffect, useState, useMemo } from "react"
 import type { ChangeEvent } from "react"
-
 
 import {
   analyzeResume,
   deleteResume,
+  downloadOptimizedResumePDFBlob,
   generateATSResume,
   getResume,
   uploadResume,
 } from "../services/api"
 
+import "./Resume.css"
 
 // ============================================================
 // TYPES
@@ -31,7 +32,7 @@ interface RoleMatch {
 }
 
 interface ResumeAnalysis {
-  ats_score: number
+  ats_score: number | null
   skills: string[]
   strengths: string[]
   weaknesses: string[]
@@ -40,777 +41,521 @@ interface ResumeAnalysis {
   summary: string
 }
 
+interface ContactInfo {
+  email?: string
+  phone?: string
+  location?: string
+  linkedin?: string
+  github?: string
+  website?: string
+}
+
 interface OptimizedResume {
-  estimated_ats_score: number
+  name?: string
+  contact_info?: ContactInfo
+  estimated_ats_score: number | null
   target_role: string
   professional_summary: string
-
   skills: string[]
-
   experience: {
     company: string
     role: string
     duration: string
+    location?: string
     bullets: string[]
   }[]
-
   projects: {
     name: string
     technologies: string[]
     bullets: string[]
   }[]
-
   education: {
     degree: string
     institution: string
     duration: string
+    grade?: string
   }[]
-
   certifications: string[]
+  achievements: string[]
   keywords: string[]
   improvements: string[]
   missing_keywords: string[]
 }
 
+const COMMON_ROLES = [
+  "Software Engineer",
+  "Full Stack Developer",
+  "Frontend Developer",
+  "Backend Developer",
+  "Data Scientist",
+  "DevOps Engineer",
+  "Machine Learning Engineer",
+]
 
 // ============================================================
 // HELPERS
 // ============================================================
 
 function safeString(value: unknown): string {
-  if (
-    value === null ||
-    value === undefined
-  ) {
+  if (value === null || value === undefined) {
     return ""
   }
-
-  return String(value)
+  return String(value).trim()
 }
 
-
-function safeStringArray(
-  value: unknown,
-): string[] {
+function safeStringArray(value: unknown): string[] {
   if (!Array.isArray(value)) {
     return []
   }
-
   return value
-    .filter(
-      (item) =>
-        item !== null &&
-        item !== undefined,
-    )
+    .filter((item) => item !== null && item !== undefined)
     .map(String)
-    .filter(
-      (item) =>
-        item.trim().length > 0,
-    )
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0)
 }
 
-
-function safeNumber(
-  value: unknown,
-): number {
-  const number = Number(value)
-
-  if (!Number.isFinite(number)) {
-    return 0
+function parseSafeScore(value: unknown): number | null {
+  if (value === null || value === undefined || value === "") {
+    return null
   }
-
-  return number
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? Math.max(0, Math.min(100, Math.round(value))) : null
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim()
+    if (!trimmed) return null
+    // Extract first numeric group (handles "78", "78%", "78/100", "78 out of 100")
+    const match = trimmed.match(/(\d+(?:\.\d+)?)/)
+    if (match) {
+      const num = parseFloat(match[1])
+      if (Number.isFinite(num)) {
+        return Math.max(0, Math.min(100, Math.round(num)))
+      }
+    }
+  }
+  return null
 }
 
-
-function clampScore(
-  value: unknown,
-): number {
-  return Math.max(
-    0,
-    Math.min(
-      100,
-      safeNumber(value),
-    ),
-  )
+function clampScore(value: unknown): number {
+  const score = parseSafeScore(value)
+  return score !== null ? score : 0
 }
 
+function base64ToBlob(base64: string, mimeType = "application/pdf"): Blob {
+  const cleanBase64 = base64.replace(/\s/g, "")
+  const byteCharacters = atob(cleanBase64)
+  const byteNumbers = new Array(byteCharacters.length)
+  for (let i = 0; i < byteCharacters.length; i++) {
+    byteNumbers[i] = byteCharacters.charCodeAt(i)
+  }
+  const byteArray = new Uint8Array(byteNumbers)
+  return new Blob([byteArray], { type: mimeType })
+}
 
 // ============================================================
 // NORMALIZE AI ANALYSIS
 // ============================================================
 
-function normalizeAnalysis(
-  raw: any,
-): ResumeAnalysis {
-
-  if (
-    !raw ||
-    typeof raw !== "object"
-  ) {
-    throw new Error(
-      "AI returned an invalid analysis response.",
-    )
+function normalizeAnalysis(raw: Record<string, unknown>): ResumeAnalysis {
+  if (!raw || typeof raw !== "object") {
+    throw new Error("AI returned an invalid analysis response.")
   }
 
-  const rawRoles =
-    Array.isArray(
-      raw.role_matching,
-    )
-      ? raw.role_matching
-      : []
+  // Handle nested analysis wrapper if raw is the root response object
+  const target: Record<string, unknown> =
+    raw.analysis && typeof raw.analysis === "object"
+      ? (raw.analysis as Record<string, unknown>)
+      : raw
 
-  const roleMatching: RoleMatch[] =
-    rawRoles
-      .filter(
-        (item: any) =>
-          item &&
-          typeof item === "object",
-      )
-      .map(
-        (item: any) => ({
-          role: safeString(
-            item.role ??
-            item.job_role ??
-            "Unknown Role",
-          ),
+  // Extract raw score across possible backend/AI property keys
+  const rawScore =
+    target.ats_score !== undefined
+      ? target.ats_score
+      : (target as any).atsScore !== undefined
+      ? (target as any).atsScore
+      : target.estimated_ats_score !== undefined
+      ? target.estimated_ats_score
+      : (target as any).estimatedAtsScore !== undefined
+      ? (target as any).estimatedAtsScore
+      : target.score
 
-          match_percentage:
-            clampScore(
-              item.match_percentage ??
-              item.match ??
-              item.score ??
-              0,
-            ),
+  const atsScore = parseSafeScore(rawScore)
 
-          reason: safeString(
-            item.reason ??
-            item.explanation ??
-            "",
-          ),
-        }),
-      )
+  const rawRoles = Array.isArray(target.role_matching) ? target.role_matching : []
+
+  const roleMatching: RoleMatch[] = rawRoles
+    .filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"))
+    .map((item) => ({
+      role: safeString(item.role ?? item.job_role ?? "Unknown Role"),
+      match_percentage: clampScore(item.match_percentage ?? item.match ?? item.score ?? 0),
+      reason: safeString(item.reason ?? item.explanation ?? ""),
+    }))
 
   return {
-    ats_score: clampScore(
-      raw.ats_score ??
-      raw.estimated_ats_score ??
-      raw.score ??
-      0,
+    ats_score: atsScore,
+    skills: safeStringArray(target.skills),
+    strengths: safeStringArray(target.strengths),
+    weaknesses: safeStringArray(target.weaknesses),
+    improvement_suggestions: safeStringArray(
+      target.improvement_suggestions ?? target.suggestions ?? target.improvements,
     ),
-
-    skills: safeStringArray(
-      raw.skills,
-    ),
-
-    strengths: safeStringArray(
-      raw.strengths,
-    ),
-
-    weaknesses: safeStringArray(
-      raw.weaknesses,
-    ),
-
-    improvement_suggestions:
-      safeStringArray(
-        raw.improvement_suggestions ??
-        raw.suggestions ??
-        raw.improvements,
-      ),
-
-    role_matching:
-      roleMatching,
-
-    summary: safeString(
-      raw.summary ??
-      raw.professional_summary ??
-      raw.overview ??
-      "",
-    ),
+    role_matching: roleMatching,
+    summary: safeString(target.summary ?? target.professional_summary ?? target.overview ?? ""),
   }
 }
-
 
 // ============================================================
 // NORMALIZE OPTIMIZED RESUME
 // ============================================================
 
-function normalizeOptimizedResume(
-  raw: any,
-): OptimizedResume {
-
-  if (
-    !raw ||
-    typeof raw !== "object"
-  ) {
-    throw new Error(
-      "AI returned an invalid optimized resume.",
-    )
+function normalizeOptimizedResume(raw: Record<string, unknown>): OptimizedResume {
+  if (!raw || typeof raw !== "object") {
+    throw new Error("AI returned an invalid optimized resume.")
   }
 
-  const experience =
-    Array.isArray(
-      raw.experience,
-    )
-      ? raw.experience
-          .filter(
-            (item: any) =>
-              item &&
-              typeof item === "object",
-          )
-          .map(
-            (item: any) => ({
-              company:
-                safeString(
-                  item.company,
-                ),
+  const rawExperience = Array.isArray(raw.experience) ? raw.experience : []
+  const experience = rawExperience
+    .filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"))
+    .map((item) => ({
+      company: safeString(item.company),
+      role: safeString(item.role),
+      duration: safeString(item.duration),
+      location: safeString(item.location),
+      bullets: safeStringArray(item.bullets),
+    }))
 
-              role:
-                safeString(
-                  item.role,
-                ),
+  const rawProjects = Array.isArray(raw.projects) ? raw.projects : []
+  const projects = rawProjects
+    .filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"))
+    .map((item) => ({
+      name: safeString(item.name),
+      technologies: safeStringArray(item.technologies),
+      bullets: safeStringArray(item.bullets),
+    }))
 
-              duration:
-                safeString(
-                  item.duration,
-                ),
+  const rawEducation = Array.isArray(raw.education) ? raw.education : []
+  const education = rawEducation
+    .filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"))
+    .map((item) => ({
+      degree: safeString(item.degree),
+      institution: safeString(item.institution),
+      duration: safeString(item.duration),
+      grade: safeString(item.grade),
+    }))
 
-              bullets:
-                safeStringArray(
-                  item.bullets,
-                ),
-            }),
-          )
-      : []
+  const rawContact =
+    raw.contact_info && typeof raw.contact_info === "object"
+      ? (raw.contact_info as Record<string, unknown>)
+      : {}
 
-  const projects =
-    Array.isArray(
-      raw.projects,
-    )
-      ? raw.projects
-          .filter(
-            (item: any) =>
-              item &&
-              typeof item === "object",
-          )
-          .map(
-            (item: any) => ({
-              name:
-                safeString(
-                  item.name,
-                ),
-
-              technologies:
-                safeStringArray(
-                  item.technologies,
-                ),
-
-              bullets:
-                safeStringArray(
-                  item.bullets,
-                ),
-            }),
-          )
-      : []
-
-  const education =
-    Array.isArray(
-      raw.education,
-    )
-      ? raw.education
-          .filter(
-            (item: any) =>
-              item &&
-              typeof item === "object",
-          )
-          .map(
-            (item: any) => ({
-              degree:
-                safeString(
-                  item.degree,
-                ),
-
-              institution:
-                safeString(
-                  item.institution,
-                ),
-
-              duration:
-                safeString(
-                  item.duration,
-                ),
-            }),
-          )
-      : []
+  const rawScore =
+    raw.estimated_ats_score !== undefined
+      ? raw.estimated_ats_score
+      : (raw as any).estimatedAtsScore !== undefined
+      ? (raw as any).estimatedAtsScore
+      : raw.ats_score !== undefined
+      ? raw.ats_score
+      : raw.score
+  const estimatedAtsScore = parseSafeScore(rawScore)
 
   return {
-    estimated_ats_score:
-      clampScore(
-        raw.estimated_ats_score ??
-        raw.ats_score ??
-        0,
-      ),
-
-    target_role:
-      safeString(
-        raw.target_role,
-      ),
-
-    professional_summary:
-      safeString(
-        raw.professional_summary ??
-        raw.summary,
-      ),
-
-    skills:
-      safeStringArray(
-        raw.skills,
-      ),
-
+    name: safeString(raw.name),
+    contact_info: {
+      email: safeString(rawContact.email),
+      phone: safeString(rawContact.phone),
+      location: safeString(rawContact.location),
+      linkedin: safeString(rawContact.linkedin),
+      github: safeString(rawContact.github),
+      website: safeString(rawContact.website),
+    },
+    estimated_ats_score: estimatedAtsScore,
+    target_role: safeString(raw.target_role),
+    professional_summary: safeString(raw.professional_summary ?? raw.summary),
+    skills: safeStringArray(raw.skills),
     experience,
-
     projects,
-
     education,
-
-    certifications:
-      safeStringArray(
-        raw.certifications,
-      ),
-
-    keywords:
-      safeStringArray(
-        raw.keywords,
-      ),
-
-    improvements:
-      safeStringArray(
-        raw.improvements,
-      ),
-
-    missing_keywords:
-      safeStringArray(
-        raw.missing_keywords,
-      ),
+    certifications: safeStringArray(raw.certifications),
+    achievements: safeStringArray(raw.achievements),
+    keywords: safeStringArray(raw.keywords),
+    improvements: safeStringArray(raw.improvements),
+    missing_keywords: safeStringArray(raw.missing_keywords),
   }
 }
-
 
 // ============================================================
 // COMPONENT
 // ============================================================
 
-function Resume() {
+export default function Resume() {
+  const [resume, setResume] = useState<ResumeData | null>(null)
+  const [analysis, setAnalysis] = useState<ResumeAnalysis | null>(null)
+  const [optimizedResume, setOptimizedResume] = useState<OptimizedResume | null>(null)
 
-  // ----------------------------------------------------------
-  // Resume
-  // ----------------------------------------------------------
+  const [targetRole, setTargetRole] = useState("Software Engineer")
 
-  const [resume, setResume] =
-    useState<ResumeData | null>(
-      null,
-    )
+  const [loading, setLoading] = useState(false)
+  const [analyzing, setAnalyzing] = useState(false)
+  const [generating, setGenerating] = useState(false)
+  const [deleting, setDeleting] = useState(false)
 
+  const [pdfBlobUrl, setPdfBlobUrl] = useState<string | null>(null)
+  const [showPdfPreview, setShowPdfPreview] = useState(false)
+  const [downloadingPdf, setDownloadingPdf] = useState(false)
 
-  // ----------------------------------------------------------
-  // Analysis
-  // ----------------------------------------------------------
+  const [error, setError] = useState("")
+  const [success, setSuccess] = useState("")
 
-  const [analysis, setAnalysis] =
-    useState<ResumeAnalysis | null>(
-      null,
-    )
+  // Clean up object URL on unmount
+  useEffect(() => {
+    return () => {
+      if (pdfBlobUrl) {
+        URL.revokeObjectURL(pdfBlobUrl)
+      }
+    }
+  }, [pdfBlobUrl])
 
+  async function loadResume() {
+    try {
+      setLoading(true)
+      setError("")
+      const data = await getResume()
+      setResume(data)
 
-  // ----------------------------------------------------------
-  // Optimized Resume
-  // ----------------------------------------------------------
-
-  const [
-    optimizedResume,
-    setOptimizedResume,
-  ] =
-    useState<OptimizedResume | null>(
-      null,
-    )
-
-
-  // ----------------------------------------------------------
-  // Target role
-  // ----------------------------------------------------------
-
-  const [
-    targetRole,
-    setTargetRole,
-  ] =
-    useState(
-      "Machine Learning Engineer",
-    )
-
-
-  // ----------------------------------------------------------
-  // Loading
-  // ----------------------------------------------------------
-
-  const [
-    loading,
-    setLoading,
-  ] =
-    useState(false)
-
-  const [
-    analyzing,
-    setAnalyzing,
-  ] =
-    useState(false)
-
-  const [
-    generating,
-    setGenerating,
-  ] =
-    useState(false)
-
-  const [
-    deleting,
-    setDeleting,
-  ] =
-    useState(false)
-
-
-  // ----------------------------------------------------------
-  // Error / Success
-  // ----------------------------------------------------------
-
-  const [
-    error,
-    setError,
-  ] =
-    useState("")
-
-  const [
-    success,
-    setSuccess,
-  ] =
-    useState("")
-
-
-  // ==========================================================
-  // LOAD RESUME
-  // ==========================================================
+      // Hydrate existing analysis from backend if available
+      if (data && (data as any).analysis) {
+        try {
+          const normalized = normalizeAnalysis((data as any).analysis as Record<string, unknown>)
+          setAnalysis(normalized)
+          if (normalized.role_matching.length > 0 && targetRole === "Software Engineer") {
+            setTargetRole(normalized.role_matching[0].role)
+          }
+        } catch (normErr) {
+          console.warn("Could not parse existing analysis:", normErr)
+        }
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to load resume"
+      if (!message.toLowerCase().includes("resume not found")) {
+        setError(message)
+      }
+    } finally {
+      setLoading(false)
+    }
+  }
 
   useEffect(() => {
     loadResume()
   }, [])
 
-
-  async function loadResume() {
-
-    try {
-
-      setLoading(true)
-      setError("")
-
-      const data =
-        await getResume()
-
-      setResume(data)
-
-    } catch (err) {
-
-      const message =
-        err instanceof Error
-          ? err.message
-          : "Failed to load resume"
-
-      if (
-        !message
-          .toLowerCase()
-          .includes(
-            "resume not found",
-          )
-      ) {
-        setError(message)
-      }
-
-    } finally {
-
-      setLoading(false)
-
-    }
-  }
-
-
   // ==========================================================
   // UPLOAD
   // ==========================================================
 
-  async function handleUpload(
-    event: ChangeEvent<HTMLInputElement>,
-  ) {
+  async function handleUpload(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]
+    if (!file) return
 
-    const file =
-      event.target.files?.[0]
-
-    if (!file) {
-      return
-    }
-
-    const extension =
-      file.name
-        .split(".")
-        .pop()
-        ?.toLowerCase()
-
-    if (
-      extension !== "pdf" &&
-      extension !== "docx"
-    ) {
-
-      setError(
-        "Only PDF and DOCX files are allowed.",
-      )
-
+    const extension = file.name.split(".").pop()?.toLowerCase()
+    if (extension !== "pdf" && extension !== "docx") {
+      setError("Only PDF and DOCX files are allowed.")
       event.target.value = ""
-
       return
     }
 
     try {
-
       setLoading(true)
       setError("")
       setSuccess("")
 
-      const data =
-        await uploadResume(
-          file,
-        )
-
-      setResume(
-        data.resume,
-      )
-
+      const data = await uploadResume(file)
+      setResume(data.resume)
       setAnalysis(null)
-
       setOptimizedResume(null)
-
-      setSuccess(
-        "Resume uploaded successfully.",
-      )
-
+      if (pdfBlobUrl) {
+        URL.revokeObjectURL(pdfBlobUrl)
+        setPdfBlobUrl(null)
+      }
+      setShowPdfPreview(false)
+      setSuccess("Resume uploaded successfully.")
     } catch (err) {
-
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Resume upload failed",
-      )
-
+      setError(err instanceof Error ? err.message : "Resume upload failed")
     } finally {
-
       setLoading(false)
-
       event.target.value = ""
-
     }
   }
-
 
   // ==========================================================
   // ANALYZE
   // ==========================================================
 
   async function handleAnalyze() {
-
     if (!resume) {
-
-      setError(
-        "Please upload a resume first.",
-      )
-
+      setError("Please upload a resume first.")
       return
     }
 
     try {
-
       setAnalyzing(true)
       setError("")
       setSuccess("")
 
-      const data =
-        await analyzeResume()
+      const data = await analyzeResume()
 
-      console.log(
-        "ANALYSIS API RESPONSE:",
-        data,
-      )
-
-      if (
-        !data ||
-        typeof data !== "object"
-      ) {
-        throw new Error(
-          "Backend returned an invalid response.",
-        )
+      if (!data || typeof data !== "object") {
+        throw new Error("AI returned an invalid analysis response.")
       }
 
-      if (
-        !data.analysis ||
-        typeof data.analysis !== "object"
-      ) {
-        throw new Error(
-          "AI returned an empty or invalid analysis.",
-        )
+      const analysisPayload =
+        data.analysis && typeof data.analysis === "object"
+          ? (data.analysis as unknown as Record<string, unknown>)
+          : (data as unknown as Record<string, unknown>)
+
+      const normalized = normalizeAnalysis(analysisPayload)
+      setAnalysis(normalized)
+
+      // Automatically set target role to top match if available and not custom
+      if (normalized.role_matching.length > 0 && targetRole === "Software Engineer") {
+        setTargetRole(normalized.role_matching[0].role)
       }
 
-      const normalizedAnalysis =
-        normalizeAnalysis(
-          data.analysis,
-        )
-
-      setAnalysis(
-        normalizedAnalysis,
-      )
-
-      setSuccess(
-        "Resume analysis completed successfully.",
-      )
-
+      setSuccess("Resume analysis completed successfully.")
     } catch (err) {
-
-      console.error(
-        "Resume analysis error:",
-        err,
-      )
-
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Resume analysis failed",
-      )
-
+      setError(err instanceof Error ? err.message : "Resume analysis failed")
     } finally {
-
       setAnalyzing(false)
-
     }
   }
-
 
   // ==========================================================
   // GENERATE ATS RESUME
   // ==========================================================
 
   async function handleGenerateATSResume() {
-
     if (!resume) {
-
-      setError(
-        "Please upload a resume first.",
-      )
-
+      setError("Please upload a resume first.")
       return
     }
 
-    if (!targetRole.trim()) {
-
-      setError(
-        "Please enter a target job role.",
-      )
-
+    const cleanRole = targetRole.trim()
+    if (!cleanRole || cleanRole.length < 2) {
+      setError("Please enter a valid target job role (at least 2 characters).")
       return
     }
 
     try {
-
       setGenerating(true)
       setError("")
       setSuccess("")
 
-      const data =
-        await generateATSResume(
-          targetRole.trim(),
-        )
+      const data = await generateATSResume(cleanRole)
 
-      console.log(
-        "ATS RESUME API RESPONSE:",
-        data,
-      )
-
-      if (
-        !data ||
-        typeof data !== "object"
-      ) {
-        throw new Error(
-          "Backend returned an invalid response.",
-        )
+      if (!data || typeof data !== "object" || !data.optimized_resume) {
+        throw new Error("AI returned an invalid optimized resume.")
       }
 
-      if (
-        !data.optimized_resume ||
-        typeof data.optimized_resume !==
-          "object"
-      ) {
-        throw new Error(
-          "AI returned an invalid optimized resume.",
-        )
+      const normalized = normalizeOptimizedResume(
+        data.optimized_resume as Record<string, unknown>,
+      )
+      setOptimizedResume(normalized)
+
+      // Handle PDF blob
+      if (data.pdf_base64) {
+        try {
+          const blob = base64ToBlob(data.pdf_base64, "application/pdf")
+          if (pdfBlobUrl) {
+            URL.revokeObjectURL(pdfBlobUrl)
+          }
+          const url = URL.createObjectURL(blob)
+          setPdfBlobUrl(url)
+        } catch (pdfErr) {
+          console.error("Failed to parse PDF base64:", pdfErr)
+        }
       }
 
-      const normalizedResume =
-        normalizeOptimizedResume(
-          data.optimized_resume,
-        )
-
-      setOptimizedResume(
-        normalizedResume,
-      )
-
-      setSuccess(
-        "ATS-optimized resume generated successfully.",
-      )
-
+      setSuccess("✓ ATS Resume Generated")
     } catch (err) {
-
-      console.error(
-        "ATS resume generation error:",
-        err,
-      )
-
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Failed to generate ATS resume",
-      )
-
+      setError(err instanceof Error ? err.message : "Failed to generate ATS-friendly resume")
     } finally {
-
       setGenerating(false)
-
     }
   }
 
+  // ==========================================================
+  // PREVIEW RESUME
+  // ==========================================================
+
+  async function handlePreviewResume() {
+    setError("")
+    if (pdfBlobUrl) {
+      setShowPdfPreview(true)
+      return
+    }
+
+    // Fallback: fetch blob from backend
+    try {
+      setDownloadingPdf(true)
+      const blob = await downloadOptimizedResumePDFBlob()
+      const url = URL.createObjectURL(blob)
+      setPdfBlobUrl(url)
+      setShowPdfPreview(true)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load resume PDF for preview.")
+    } finally {
+      setDownloadingPdf(false)
+    }
+  }
+
+  // ==========================================================
+  // DOWNLOAD PDF
+  // ==========================================================
+
+  async function handleDownloadPDF() {
+    setError("")
+    const safeRoleName = (targetRole || "Job").trim().replace(/[^a-zA-Z0-9_-]/g, "_")
+    const fileName = `ATS_Resume_${safeRoleName}.pdf`
+
+    if (pdfBlobUrl) {
+      const link = document.createElement("a")
+      link.href = pdfBlobUrl
+      link.download = fileName
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      return
+    }
+
+    try {
+      setDownloadingPdf(true)
+      const blob = await downloadOptimizedResumePDFBlob()
+      const url = URL.createObjectURL(blob)
+      setPdfBlobUrl(url)
+
+      const link = document.createElement("a")
+      link.href = url
+      link.download = fileName
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to download PDF resume.")
+    } finally {
+      setDownloadingPdf(false)
+    }
+  }
 
   // ==========================================================
   // DELETE
   // ==========================================================
 
   async function handleDelete() {
+    if (!resume) return
 
-    if (!resume) {
-      return
-    }
-
-    const confirmed =
-      window.confirm(
-        "Are you sure you want to delete your resume?",
-      )
-
-    if (!confirmed) {
-      return
-    }
+    const confirmed = window.confirm("Are you sure you want to delete your resume?")
+    if (!confirmed) return
 
     try {
-
       setDeleting(true)
       setError("")
       setSuccess("")
@@ -820,1491 +565,677 @@ function Resume() {
       setResume(null)
       setAnalysis(null)
       setOptimizedResume(null)
-
-      setSuccess(
-        "Resume deleted successfully.",
-      )
-
+      if (pdfBlobUrl) {
+        URL.revokeObjectURL(pdfBlobUrl)
+        setPdfBlobUrl(null)
+      }
+      setShowPdfPreview(false)
+      setSuccess("Resume deleted successfully.")
     } catch (err) {
-
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Failed to delete resume",
-      )
-
+      setError(err instanceof Error ? err.message : "Failed to delete resume")
     } finally {
-
       setDeleting(false)
-
     }
   }
 
+  // Available suggestions: roles from analysis or common roles
+  const suggestedRoles = useMemo(() => {
+    if (analysis && analysis.role_matching.length > 0) {
+      return analysis.role_matching.map((r) => r.role)
+    }
+    return COMMON_ROLES
+  }, [analysis])
 
   // ==========================================================
-  // LOADING
+  // LOADING STATE
   // ==========================================================
 
   if (loading) {
-
     return (
-      <div style={styles.page}>
-        <div style={styles.loading}>
+      <div className="resume-page">
+        <div style={{ textAlign: "center", padding: "100px 20px", color: "#94a3b8" }}>
+          <div className="generation-spinner" style={{ margin: "0 auto 16px" }} />
           Loading resume...
         </div>
       </div>
     )
   }
 
-
   // ==========================================================
-  // UI
+  // RENDER
   // ==========================================================
 
   return (
+    <div className="resume-page">
+      {/* Background aesthetics */}
+      <div className="resume-background">
+        <div className="resume-glow glow-one" />
+        <div className="resume-glow glow-two" />
+        <div className="resume-grid" />
+      </div>
 
-    <div style={styles.page}>
+      {/* HEADER */}
+      <header className="resume-header">
+        <div className="resume-eyebrow">AI RESUME OPTIMIZER</div>
+        <h1>Resume Analyzer & ATS Builder</h1>
+        <p className="resume-subtitle">
+          Upload your resume, analyze ATS readiness, and generate an ATS-optimized, single-column PDF resume targeted to your dream job.
+        </p>
+      </header>
 
-      <div style={styles.container}>
-
-        {/* ================================================= */}
-        {/* HEADER */}
-        {/* ================================================= */}
-
-        <div style={styles.header}>
-
-          <div>
-
-            <h1 style={styles.title}>
-              Resume Analyzer
-            </h1>
-
-            <p style={styles.subtitle}>
-              Analyze your resume and create
-              an ATS-optimized version.
-            </p>
-
-          </div>
-
-        </div>
-
-
-        {/* ================================================= */}
-        {/* MESSAGES */}
-        {/* ================================================= */}
-
-        {error && (
-
-          <div style={styles.error}>
-            ⚠ {error}
-          </div>
-
-        )}
-
+      <main className="resume-container">
+        {/* NOTIFICATIONS */}
+        {error && <div className="resume-error">⚠ {error}</div>}
         {success && (
-
-          <div style={styles.success}>
-            ✓ {success}
+          <div
+            style={{
+              padding: "14px 18px",
+              borderRadius: "12px",
+              background: "rgba(16, 185, 129, 0.12)",
+              border: "1px solid rgba(16, 185, 129, 0.25)",
+              color: "#34d399",
+              marginBottom: "20px",
+              fontWeight: 600,
+            }}
+          >
+            {success}
           </div>
-
         )}
 
-
-        {/* ================================================= */}
-        {/* UPLOAD */}
-        {/* ================================================= */}
-
-        <section style={styles.card}>
-
-          <h2 style={styles.sectionTitle}>
-            Resume
-          </h2>
+        {/* =====================================================
+            1. UPLOAD RESUME CARD
+        ===================================================== */}
+        <section className="upload-card">
+          <div className="upload-icon">📄</div>
+          <h2>{resume ? "Your Active Resume" : "Upload Your Resume"}</h2>
+          <p>
+            {resume
+              ? "Your resume is active and ready for AI analysis and ATS generation."
+              : "Upload your existing resume in PDF or DOCX format to get started."}
+          </p>
 
           {!resume ? (
-
-            <div style={styles.uploadBox}>
-
-              <div style={styles.uploadIcon}>
-                ↑
-              </div>
-
-              <h3>
-                Upload your resume
-              </h3>
-
-              <p style={styles.muted}>
-                PDF or DOCX
-              </p>
-
-              <label
-                htmlFor="resume-upload"
-                style={styles.primaryButton}
-              >
-                Choose Resume
-              </label>
-
+            <label htmlFor="resume-upload" className="drop-zone">
+              <div className="drop-icon">⬆</div>
+              <strong>Choose a resume file</strong>
+              <span>Supports PDF and DOCX up to 10MB</span>
+              <small>Click to browse from your device</small>
               <input
                 id="resume-upload"
                 type="file"
                 accept=".pdf,.docx"
-                onChange={
-                  handleUpload
-                }
-                style={{
-                  display: "none",
-                }}
+                onChange={handleUpload}
+                style={{ display: "none" }}
               />
-
-            </div>
-
+            </label>
           ) : (
-
-            <div style={styles.resumeRow}>
-
-              <div>
-
-                <div
-                  style={
-                    styles.filename
-                  }
-                >
-                  {resume.filename}
-                </div>
-
-                <div
-                  style={
-                    styles.muted
-                  }
-                >
-                  Uploaded{" "}
-                  {new Date(
-                    resume.uploaded_at,
-                  ).toLocaleDateString()}
-                </div>
-
-              </div>
-
+            <div>
               <div
-                style={
-                  styles.buttonGroup
-                }
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  padding: "18px 24px",
+                  borderRadius: "16px",
+                  background: "rgba(15, 23, 42, 0.9)",
+                  border: "1px solid #334155",
+                  marginBottom: "20px",
+                  flexWrap: "wrap",
+                  gap: "12px",
+                }}
               >
+                <div style={{ textAlign: "left" }}>
+                  <div style={{ fontSize: "17px", fontWeight: 700, color: "#f8fafc" }}>
+                    {resume.filename}
+                  </div>
+                  <div style={{ fontSize: "13px", color: "#94a3b8", marginTop: "4px" }}>
+                    Uploaded {new Date(resume.uploaded_at).toLocaleDateString()}
+                  </div>
+                </div>
 
-                <label
-                  htmlFor="replace-resume"
-                  style={
-                    styles.secondaryButton
-                  }
-                >
-                  Replace
-                </label>
+                <div style={{ display: "flex", gap: "10px" }}>
+                  <label
+                    htmlFor="replace-resume"
+                    style={{
+                      padding: "10px 18px",
+                      borderRadius: "10px",
+                      background: "#1e293b",
+                      border: "1px solid #475569",
+                      color: "#f8fafc",
+                      fontSize: "13px",
+                      fontWeight: 700,
+                      cursor: "pointer",
+                    }}
+                  >
+                    Replace File
+                  </label>
+                  <input
+                    id="replace-resume"
+                    type="file"
+                    accept=".pdf,.docx"
+                    onChange={handleUpload}
+                    style={{ display: "none" }}
+                  />
 
-                <input
-                  id="replace-resume"
-                  type="file"
-                  accept=".pdf,.docx"
-                  onChange={
-                    handleUpload
-                  }
-                  style={{
-                    display: "none",
-                  }}
-                />
-
-                <button
-                  onClick={
-                    handleDelete
-                  }
-                  disabled={deleting}
-                  style={
-                    styles.dangerButton
-                  }
-                >
-                  {deleting
-                    ? "Deleting..."
-                    : "Delete"}
-                </button>
-
+                  <button
+                    type="button"
+                    onClick={handleDelete}
+                    disabled={deleting}
+                    style={{
+                      padding: "10px 18px",
+                      borderRadius: "10px",
+                      background: "rgba(239, 68, 68, 0.15)",
+                      border: "1px solid rgba(239, 68, 68, 0.3)",
+                      color: "#fca5a5",
+                      fontSize: "13px",
+                      fontWeight: 700,
+                      cursor: "pointer",
+                    }}
+                  >
+                    {deleting ? "Deleting..." : "Delete"}
+                  </button>
+                </div>
               </div>
 
+              <button
+                type="button"
+                className="analyze-button"
+                onClick={handleAnalyze}
+                disabled={analyzing}
+              >
+                {analyzing ? "Analyzing Resume..." : "Analyze Resume with AI →"}
+              </button>
             </div>
-
           )}
-
         </section>
 
-
-        {/* ================================================= */}
-        {/* ACTIONS */}
-        {/* ================================================= */}
-
-        {resume && (
-
-          <section style={styles.card}>
-
-            <h2 style={styles.sectionTitle}>
-              AI Resume Tools
-            </h2>
-
-
-            {/* ANALYZE */}
-
-            <div style={styles.tool}>
-
+        {/* =====================================================
+            2. RESUME ANALYSIS RESULTS
+        ===================================================== */}
+        {analysis && (
+          <section className="analysis-results">
+            <div className="results-top">
               <div>
-
-                <h3>
-                  Resume Analysis
-                </h3>
-
-                <p style={styles.muted}>
-                  Check ATS score, skills,
-                  strengths, weaknesses and
-                  suitable roles.
+                <span className="resume-eyebrow">AUDIT SUMMARY</span>
+                <h2>Resume Analysis</h2>
+                <p>
+                  {analysis.summary ||
+                    "Comprehensive ATS compatibility evaluation based on your resume content."}
                 </p>
-
               </div>
 
-              <button
-                onClick={
-                  handleAnalyze
-                }
-                disabled={analyzing}
-                style={
-                  styles.primaryButton
-                }
-              >
-                {analyzing
-                  ? "Analyzing..."
-                  : "Analyze Resume"}
-              </button>
-
+              <div className="ats-card">
+                <span>ESTIMATED ATS SCORE</span>
+                <strong>
+                  {analysis.ats_score !== null && analysis.ats_score !== undefined
+                    ? analysis.ats_score
+                    : "--"}
+                </strong>
+                <small>/100 Match</small>
+              </div>
             </div>
 
+            {/* SKILLS */}
+            {analysis.skills.length > 0 && (
+              <div className="result-card">
+                <div className="section-heading">
+                  <span>CORE SKILLS</span>
+                  <h3>Detected Technical Skills ({analysis.skills.length})</h3>
+                </div>
+                <div className="skills-list">
+                  {analysis.skills.map((skill, idx) => (
+                    <span key={idx} className="skill-pill">
+                      {skill}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
 
-            {/* ATS GENERATOR */}
+            {/* STRENGTHS & WEAKNESSES */}
+            <div className="two-column">
+              <div className="result-card">
+                <div className="section-heading">
+                  <span>KEY STRENGTHS</span>
+                  <h3>Profile Strengths</h3>
+                </div>
+                <ul className="insight-list">
+                  {analysis.strengths.map((item, idx) => (
+                    <li key={idx}>
+                      <span>✓</span>
+                      <div>{item}</div>
+                    </li>
+                  ))}
+                </ul>
+              </div>
 
-            <div style={styles.tool}>
+              <div className="result-card">
+                <div className="section-heading">
+                  <span style={{ color: "#fca5a5" }}>AREAS TO IMPROVE</span>
+                  <h3>Identified Gaps</h3>
+                </div>
+                <ul className="insight-list">
+                  {analysis.weaknesses.map((item, idx) => (
+                    <li key={idx}>
+                      <span style={{ color: "#f87171" }}>✕</span>
+                      <div>{item}</div>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
 
-              <div
-                style={
-                  styles.toolContent
-                }
-              >
+            {/* AI SUGGESTIONS */}
+            {analysis.improvement_suggestions.length > 0 && (
+              <div className="result-card">
+                <div className="section-heading">
+                  <span>RECOMMENDATIONS</span>
+                  <h3>Actionable ATS Improvements</h3>
+                </div>
+                <div className="suggestion-list">
+                  {analysis.improvement_suggestions.map((sug, idx) => (
+                    <div key={idx} className="suggestion">
+                      <span>{String(idx + 1).padStart(2, "0")}</span>
+                      <p>{sug}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
-                <h3>
-                  AI ATS Resume Builder
-                </h3>
+            {/* ROLE MATCHES */}
+            {analysis.role_matching.length > 0 && (
+              <div className="result-card">
+                <div className="section-heading">
+                  <span>CAREER ALIGNMENT</span>
+                  <h3>Role Match Breakdown</h3>
+                </div>
+                <div className="role-list">
+                  {analysis.role_matching.map((roleItem, idx) => (
+                    <div key={idx} className="role-item">
+                      <div className="role-info">
+                        <strong>{roleItem.role}</strong>
+                        {roleItem.reason && <p>{roleItem.reason}</p>}
+                      </div>
+                      <div className="role-score">
+                        <strong>{Math.round(roleItem.match_percentage)}% Match</strong>
+                        <div className="score-bar">
+                          <div
+                            style={{
+                              width: `${Math.min(100, Math.max(0, roleItem.match_percentage))}%`,
+                            }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </section>
+        )}
 
-                <p style={styles.muted}>
-                  Rebuild your existing resume
-                  for your target role using
-                  ATS-friendly structure and
-                  keywords.
+        {/* =====================================================
+            3. AI ATS RESUME BUILDER (TARGET ROLE + GENERATE)
+        ===================================================== */}
+        {resume && (
+          <section className="rebuilder-card" style={{ marginTop: "40px" }}>
+            <div className="rebuilder-header">
+              <div>
+                <span className="resume-eyebrow">ATS OPTIMIZATION</span>
+                <h2>Generate ATS-Friendly Resume</h2>
+                <p>
+                  Target your resume for a specific job title. Our AI restructures your truthful source experience, enhances action verbs, optimizes keyword density, and generates an ATS-compliant single-column PDF.
                 </p>
+              </div>
+              <div className="rebuilder-icon">⚡</div>
+            </div>
 
+            {/* TARGET ROLE CONTROLS */}
+            <div className="rebuilder-controls">
+              <label htmlFor="target-role-input">Target Job Role</label>
+              <div className="role-input-row">
                 <input
+                  id="target-role-input"
                   type="text"
                   value={targetRole}
-                  onChange={(event) =>
-                    setTargetRole(
-                      event.target.value,
-                    )
-                  }
-                  placeholder="Target job role"
-                  style={
-                    styles.input
-                  }
+                  onChange={(e) => setTargetRole(e.target.value)}
+                  placeholder="e.g. Software Engineer, Full Stack Developer, Data Scientist"
+                  disabled={generating}
                 />
-
+                <button
+                  type="button"
+                  id="generate-ats-resume-btn"
+                  className="generate-resume-button"
+                  onClick={handleGenerateATSResume}
+                  disabled={generating || !targetRole.trim()}
+                >
+                  {generating ? "Generating..." : "Generate ATS-Friendly Resume"}
+                </button>
               </div>
 
-              <button
-                onClick={
-                  handleGenerateATSResume
-                }
-                disabled={generating}
-                style={
-                  styles.primaryButton
-                }
-              >
-                {generating
-                  ? "Generating..."
-                  : "Create ATS Resume"}
-              </button>
-
-            </div>
-
-          </section>
-
-        )}
-
-
-        {/* ================================================= */}
-        {/* ANALYSIS RESULT */}
-        {/* ================================================= */}
-
-        {analysis && (
-
-          <section style={styles.card}>
-
-            <h2 style={styles.sectionTitle}>
-              Analysis Complete
-            </h2>
-
-
-            {/* ATS SCORE */}
-
-            <div style={styles.scoreBox}>
-
-              <div>
-
-                <div style={styles.scoreLabel}>
-                  ATS SCORE
-                </div>
-
-                <div style={styles.score}>
-                  {Math.round(
-                    analysis.ats_score,
-                  )}
-
-                  <span
-                    style={
-                      styles.scoreMax
-                    }
+              {/* ROLE SUGGESTIONS CHIPS */}
+              <div className="role-suggestions">
+                <span className="role-suggestions-label">Suggestions:</span>
+                {suggestedRoles.map((roleName, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    className={`role-chip ${targetRole.toLowerCase() === roleName.toLowerCase() ? "active" : ""}`}
+                    onClick={() => setTargetRole(roleName)}
+                    disabled={generating}
                   >
-                    /100
+                    {roleName}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* GENERATING STATE */}
+            {generating && (
+              <div className="generation-status-box">
+                <div className="generation-spinner" />
+                <div className="generation-status-text">
+                  Generating your ATS-friendly resume...
+                </div>
+              </div>
+            )}
+
+            {/* SUCCESS BANNER & ACTION BUTTONS */}
+            {optimizedResume && !generating && (
+              <div className="ats-success-banner">
+                <div className="ats-success-info">
+                  <div className="ats-success-badge">✓ ATS Resume Generated</div>
+                  <span style={{ color: "#94a3b8" }}>
+                    Optimized for <strong>{optimizedResume.target_role}</strong>
                   </span>
-
                 </div>
 
+                <div className="ats-action-buttons">
+                  <button
+                    type="button"
+                    id="preview-resume-btn"
+                    className="preview-resume-btn"
+                    onClick={handlePreviewResume}
+                    disabled={downloadingPdf}
+                  >
+                    👁 Preview Resume
+                  </button>
+                  <button
+                    type="button"
+                    id="download-pdf-btn"
+                    className="download-pdf-btn"
+                    onClick={handleDownloadPDF}
+                    disabled={downloadingPdf}
+                  >
+                    ⬇ Download PDF
+                  </button>
+                </div>
               </div>
-
-              <div
-                style={
-                  styles.scoreMessage
-                }
-              >
-
-                {analysis.ats_score >= 90
-                  ? "Excellent ATS compatibility"
-                  : analysis.ats_score >= 75
-                    ? "Good ATS compatibility"
-                    : "Needs improvement"}
-
-              </div>
-
-            </div>
-
-
-            {/* SUMMARY */}
-
-            {analysis.summary && (
-
-              <div
-                style={
-                  styles.resultBlock
-                }
-              >
-
-                <h3>
-                  Professional Summary
-                </h3>
-
-                <p>
-                  {analysis.summary}
-                </p>
-
-              </div>
-
             )}
 
-
-            {/* SKILLS */}
-
-            <div
-              style={
-                styles.resultBlock
-              }
-            >
-
-              <h3>
-                Skills Detected
-              </h3>
-
-              {analysis.skills.length >
-              0 ? (
-
-                <div style={styles.tags}>
-
-                  {analysis.skills.map(
-                    (skill, index) => (
-
-                      <span
-                        key={index}
-                        style={styles.tag}
-                      >
-                        {skill}
-                      </span>
-
-                    ),
-                  )}
-
+            {/* =====================================================
+                OPTIMIZED RESUME CONTENT OVERVIEW
+            ===================================================== */}
+            {optimizedResume && (
+              <div className="optimized-result">
+                <div className="optimized-score">
+                  <div>
+                    <span>ESTIMATED ATS SCORE</span>
+                    <strong>
+                      {optimizedResume.estimated_ats_score !== null &&
+                      optimizedResume.estimated_ats_score !== undefined
+                        ? optimizedResume.estimated_ats_score
+                        : "--"}
+                    </strong>
+                    <small>/100 Match</small>
+                  </div>
+                  <div className="target-badge">{optimizedResume.target_role}</div>
                 </div>
 
-              ) : (
-
-                <p style={styles.muted}>
-                  No skills detected.
-                </p>
-
-              )}
-
-            </div>
-
-
-            {/* STRENGTHS */}
-
-            <div
-              style={
-                styles.resultBlock
-              }
-            >
-
-              <h3>
-                Strengths
-              </h3>
-
-              {analysis.strengths.length >
-              0 ? (
-
-                <ul>
-
-                  {analysis.strengths.map(
-                    (item, index) => (
-
-                      <li key={index}>
-                        {item}
-                      </li>
-
-                    ),
-                  )}
-
-                </ul>
-
-              ) : (
-
-                <p style={styles.muted}>
-                  No strengths returned.
-                </p>
-
-              )}
-
-            </div>
-
-
-            {/* WEAKNESSES */}
-
-            <div
-              style={
-                styles.resultBlock
-              }
-            >
-
-              <h3>
-                Weaknesses
-              </h3>
-
-              {analysis.weaknesses.length >
-              0 ? (
-
-                <ul>
-
-                  {analysis.weaknesses.map(
-                    (item, index) => (
-
-                      <li key={index}>
-                        {item}
-                      </li>
-
-                    ),
-                  )}
-
-                </ul>
-
-              ) : (
-
-                <p style={styles.muted}>
-                  No weaknesses returned.
-                </p>
-
-              )}
-
-            </div>
-
-
-            {/* SUGGESTIONS */}
-
-            <div
-              style={
-                styles.resultBlock
-              }
-            >
-
-              <h3>
-                AI Improvement Suggestions
-              </h3>
-
-              {analysis
-                .improvement_suggestions
-                .length > 0 ? (
-
-                <ol>
-
-                  {analysis
-                    .improvement_suggestions
-                    .map(
-                      (item, index) => (
-
-                        <li key={index}>
-                          {item}
-                        </li>
-
-                      ),
+                {/* Candidate Name & Contact Info */}
+                {(optimizedResume.name || optimizedResume.contact_info) && (
+                  <div className="optimized-section" style={{ borderBottom: "1px solid rgba(255,255,255,0.06)", paddingBottom: "16px" }}>
+                    <h3 style={{ fontSize: "20px", color: "#f8fafc", margin: "0 0 6px" }}>
+                      {optimizedResume.name || "Candidate"}
+                    </h3>
+                    {optimizedResume.contact_info && (
+                      <p style={{ color: "#94a3b8", fontSize: "14px", margin: 0 }}>
+                        {[
+                          optimizedResume.contact_info.email,
+                          optimizedResume.contact_info.phone,
+                          optimizedResume.contact_info.location,
+                          optimizedResume.contact_info.linkedin,
+                          optimizedResume.contact_info.github,
+                        ]
+                          .filter(Boolean)
+                          .join(" • ")}
+                      </p>
                     )}
-
-                </ol>
-
-              ) : (
-
-                <p style={styles.muted}>
-                  No improvement suggestions returned.
-                </p>
-
-              )}
-
-            </div>
-
-
-            {/* ROLE MATCHING */}
-
-            <div
-              style={
-                styles.resultBlock
-              }
-            >
-
-              <h3>
-                Role Matching
-              </h3>
-
-              {analysis.role_matching
-                .length > 0 ? (
-
-                <div
-                  style={
-                    styles.roleGrid
-                  }
-                >
-
-                  {analysis.role_matching.map(
-                    (role, index) => (
-
-                      <div
-                        key={index}
-                        style={
-                          styles.roleCard
-                        }
-                      >
-
-                        <div
-                          style={
-                            styles.roleHeader
-                          }
-                        >
-
-                          <strong>
-                            {role.role}
-                          </strong>
-
-                          <strong>
-                            {Math.round(
-                              role.match_percentage,
-                            )}
-                            %
-                          </strong>
-
-                        </div>
-
-                        {role.reason && (
-
-                          <p
-                            style={
-                              styles.muted
-                            }
-                          >
-                            {role.reason}
-                          </p>
-
-                        )}
-
-                      </div>
-
-                    ),
-                  )}
-
-                </div>
-
-              ) : (
-
-                <p style={styles.muted}>
-                  No role matching data returned.
-                </p>
-
-              )}
-
-            </div>
-
-          </section>
-
-        )}
-
-
-        {/* ================================================= */}
-        {/* OPTIMIZED RESUME */}
-        {/* ================================================= */}
-
-        {optimizedResume && (
-
-          <section style={styles.card}>
-
-            <div
-              style={
-                styles.optimizedHeader
-              }
-            >
-
-              <div>
-
-                <h2
-                  style={
-                    styles.sectionTitle
-                  }
-                >
-                  ATS Resume Generated
-                </h2>
-
-                <p style={styles.muted}>
-                  Target Role:{" "}
-                  <strong>
-                    {
-                      optimizedResume.target_role
-                    }
-                  </strong>
-                </p>
-
-              </div>
-
-              <div
-                style={
-                  styles.optimizedScore
-                }
-              >
-
-                <span>
-                  Estimated ATS
-                </span>
-
-                <strong>
-                  {Math.round(
-                    optimizedResume.estimated_ats_score,
-                  )}
-                  /100
-                </strong>
-
-              </div>
-
-            </div>
-
-
-            {/* SUMMARY */}
-
-            {optimizedResume
-              .professional_summary && (
-
-              <div
-                style={
-                  styles.resultBlock
-                }
-              >
-
-                <h3>
-                  Professional Summary
-                </h3>
-
-                <p>
-                  {
-                    optimizedResume.professional_summary
-                  }
-                </p>
-
-              </div>
-
-            )}
-
-
-            {/* SKILLS */}
-
-            <div
-              style={
-                styles.resultBlock
-              }
-            >
-
-              <h3>
-                Technical Skills
-              </h3>
-
-              {optimizedResume.skills
-                .length > 0 ? (
-
-                <div style={styles.tags}>
-
-                  {optimizedResume.skills.map(
-                    (skill, index) => (
-
-                      <span
-                        key={index}
-                        style={styles.tag}
-                      >
-                        {skill}
-                      </span>
-
-                    ),
-                  )}
-
-                </div>
-
-              ) : (
-
-                <p style={styles.muted}>
-                  No skills returned.
-                </p>
-
-              )}
-
-            </div>
-
-
-            {/* EXPERIENCE */}
-
-            {optimizedResume.experience.length >
-              0 && (
-
-              <div
-                style={
-                  styles.resultBlock
-                }
-              >
-
-                <h3>
-                  Experience
-                </h3>
-
-                {optimizedResume.experience.map(
-                  (item, index) => (
-
-                    <div
-                      key={index}
-                      style={
-                        styles.experienceItem
-                      }
-                    >
-
-                      <div
-                        style={
-                          styles.roleHeader
-                        }
-                      >
-
-                        <strong>
-                          {item.role}
-                        </strong>
-
-                        <span>
-                          {item.duration}
+                  </div>
+                )}
+
+                {/* Summary */}
+                {optimizedResume.professional_summary && (
+                  <div className="optimized-section">
+                    <h3>Professional Summary</h3>
+                    <p>{optimizedResume.professional_summary}</p>
+                  </div>
+                )}
+
+                {/* Skills */}
+                {optimizedResume.skills.length > 0 && (
+                  <div className="optimized-section">
+                    <h3>Targeted Skills</h3>
+                    <div className="project-tech">
+                      {optimizedResume.skills.map((skill, idx) => (
+                        <span key={idx} className="keyword-pill">
+                          {skill}
                         </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
+                {/* Experience */}
+                {optimizedResume.experience.length > 0 && (
+                  <div className="optimized-section">
+                    <h3>Work Experience</h3>
+                    {optimizedResume.experience.map((exp, idx) => (
+                      <div key={idx} className="optimized-item">
+                        <div className="optimized-item-header">
+                          <strong>{exp.role}</strong>
+                          <span>{exp.duration}</span>
+                        </div>
+                        {exp.company && (
+                          <div className="company-name">
+                            {exp.company}
+                            {exp.location ? ` • ${exp.location}` : ""}
+                          </div>
+                        )}
+                        {exp.bullets.length > 0 && (
+                          <ul>
+                            {exp.bullets.map((bullet, bIdx) => (
+                              <li key={bIdx}>{bullet}</li>
+                            ))}
+                          </ul>
+                        )}
                       </div>
-
-                      {item.company && (
-
-                        <div
-                          style={
-                            styles.muted
-                          }
-                        >
-                          {item.company}
-                        </div>
-
-                      )}
-
-                      {item.bullets.length >
-                        0 && (
-
-                        <ul>
-
-                          {item.bullets.map(
-                            (
-                              bullet,
-                              bulletIndex,
-                            ) => (
-
-                              <li
-                                key={
-                                  bulletIndex
-                                }
-                              >
-                                {bullet}
-                              </li>
-
-                            ),
-                          )}
-
-                        </ul>
-
-                      )}
-
-                    </div>
-
-                  ),
+                    ))}
+                  </div>
                 )}
 
-              </div>
-
-            )}
-
-
-            {/* PROJECTS */}
-
-            {optimizedResume.projects.length >
-              0 && (
-
-              <div
-                style={
-                  styles.resultBlock
-                }
-              >
-
-                <h3>
-                  Projects
-                </h3>
-
-                {optimizedResume.projects.map(
-                  (project, index) => (
-
-                    <div
-                      key={index}
-                      style={
-                        styles.experienceItem
-                      }
-                    >
-
-                      <strong>
-                        {project.name}
-                      </strong>
-
-                      {project.technologies.length >
-                        0 && (
-
-                        <div
-                          style={
-                            styles.tags
-                          }
-                        >
-
-                          {project.technologies.map(
-                            (
-                              technology,
-                              technologyIndex,
-                            ) => (
-
-                              <span
-                                key={
-                                  technologyIndex
-                                }
-                                style={
-                                  styles.tag
-                                }
-                              >
-                                {technology}
-                              </span>
-
-                            ),
-                          )}
-
-                        </div>
-
-                      )}
-
-                      {project.bullets.length >
-                        0 && (
-
-                        <ul>
-
-                          {project.bullets.map(
-                            (
-                              bullet,
-                              bulletIndex,
-                            ) => (
-
-                              <li
-                                key={
-                                  bulletIndex
-                                }
-                              >
-                                {bullet}
-                              </li>
-
-                            ),
-                          )}
-
-                        </ul>
-
-                      )}
-
-                    </div>
-
-                  ),
+                {/* Projects */}
+                {optimizedResume.projects.length > 0 && (
+                  <div className="optimized-section">
+                    <h3>Projects</h3>
+                    {optimizedResume.projects.map((proj, idx) => (
+                      <div key={idx} className="optimized-item">
+                        <strong>{proj.name}</strong>
+                        {proj.technologies.length > 0 && (
+                          <div className="project-tech">
+                            {proj.technologies.map((tech, tIdx) => (
+                              <span key={tIdx}>{tech}</span>
+                            ))}
+                          </div>
+                        )}
+                        {proj.bullets.length > 0 && (
+                          <ul>
+                            {proj.bullets.map((bullet, bIdx) => (
+                              <li key={bIdx}>{bullet}</li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                    ))}
+                  </div>
                 )}
 
-              </div>
-
-            )}
-
-
-            {/* EDUCATION */}
-
-            {optimizedResume.education.length >
-              0 && (
-
-              <div
-                style={
-                  styles.resultBlock
-                }
-              >
-
-                <h3>
-                  Education
-                </h3>
-
-                {optimizedResume.education.map(
-                  (
-                    education,
-                    index,
-                  ) => (
-
-                    <div
-                      key={index}
-                      style={
-                        styles.experienceItem
-                      }
-                    >
-
-                      <strong>
-                        {education.degree}
-                      </strong>
-
-                      {education.institution && (
-
-                        <div>
-                          {
-                            education.institution
-                          }
-                        </div>
-
-                      )}
-
-                      {education.duration && (
-
-                        <div
-                          style={
-                            styles.muted
-                          }
-                        >
-                          {
-                            education.duration
-                          }
-                        </div>
-
-                      )}
-
-                    </div>
-
-                  ),
+                {/* Education */}
+                {optimizedResume.education.length > 0 && (
+                  <div className="optimized-section">
+                    <h3>Education</h3>
+                    {optimizedResume.education.map((edu, idx) => (
+                      <div key={idx} className="education-item">
+                        <strong>{edu.degree}</strong>
+                        <span>{edu.institution}</span>
+                        {edu.duration && <small>{edu.duration}</small>}
+                      </div>
+                    ))}
+                  </div>
                 )}
 
+                {/* Certifications */}
+                {optimizedResume.certifications.length > 0 && (
+                  <div className="optimized-section">
+                    <h3>Certifications</h3>
+                    <ul>
+                      {optimizedResume.certifications.map((cert, idx) => (
+                        <li key={idx} style={{ color: "#cbd5e1" }}>
+                          {cert}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {/* Achievements */}
+                {optimizedResume.achievements.length > 0 && (
+                  <div className="optimized-section">
+                    <h3>Achievements</h3>
+                    <ul>
+                      {optimizedResume.achievements.map((ach, idx) => (
+                        <li key={idx} style={{ color: "#cbd5e1" }}>
+                          {ach}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {/* ATS Keywords */}
+                {optimizedResume.keywords.length > 0 && (
+                  <div className="optimized-section">
+                    <h3>ATS Keywords Incorporated</h3>
+                    <div className="project-tech">
+                      {optimizedResume.keywords.map((kw, idx) => (
+                        <span key={idx} className="keyword-pill">
+                          {kw}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Improvements */}
+                {optimizedResume.improvements.length > 0 && (
+                  <div className="optimized-section">
+                    <h3>Optimizations Applied</h3>
+                    <ul className="improvement-list">
+                      {optimizedResume.improvements.map((imp, idx) => (
+                        <li key={idx} style={{ color: "#86efac", marginBottom: "6px" }}>
+                          ✓ {imp}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {/* Missing Keywords */}
+                {optimizedResume.missing_keywords.length > 0 && (
+                  <div className="missing-keywords">
+                    <h3>Recommended Missing Keywords to Consider</h3>
+                    <div className="project-tech">
+                      {optimizedResume.missing_keywords.map((mkw, idx) => (
+                        <span key={idx} style={{ background: "rgba(245,158,11,0.15)", color: "#fde68a", borderColor: "rgba(245,158,11,0.3)" }}>
+                          + {mkw}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
-
             )}
-
-
-            {/* CERTIFICATIONS */}
-
-            {optimizedResume.certifications.length >
-              0 && (
-
-              <div
-                style={
-                  styles.resultBlock
-                }
-              >
-
-                <h3>
-                  Certifications
-                </h3>
-
-                <ul>
-
-                  {optimizedResume.certifications.map(
-                    (
-                      certification,
-                      index,
-                    ) => (
-
-                      <li key={index}>
-                        {certification}
-                      </li>
-
-                    ),
-                  )}
-
-                </ul>
-
-              </div>
-
-            )}
-
-
-            {/* KEYWORDS */}
-
-            {optimizedResume.keywords.length >
-              0 && (
-
-              <div
-                style={
-                  styles.resultBlock
-                }
-              >
-
-                <h3>
-                  ATS Keywords
-                </h3>
-
-                <div
-                  style={
-                    styles.tags
-                  }
-                >
-
-                  {optimizedResume.keywords.map(
-                    (
-                      keyword,
-                      index,
-                    ) => (
-
-                      <span
-                        key={index}
-                        style={styles.tag}
-                      >
-                        {keyword}
-                      </span>
-
-                    ),
-                  )}
-
-                </div>
-
-              </div>
-
-            )}
-
-
-            {/* IMPROVEMENTS */}
-
-            {optimizedResume.improvements.length >
-              0 && (
-
-              <div
-                style={
-                  styles.resultBlock
-                }
-              >
-
-                <h3>
-                  Improvements Made
-                </h3>
-
-                <ul>
-
-                  {optimizedResume.improvements.map(
-                    (
-                      item,
-                      index,
-                    ) => (
-
-                      <li key={index}>
-                        {item}
-                      </li>
-
-                    ),
-                  )}
-
-                </ul>
-
-              </div>
-
-            )}
-
-
-            {/* MISSING KEYWORDS */}
-
-            {optimizedResume.missing_keywords.length >
-              0 && (
-
-              <div
-                style={
-                  styles.resultBlock
-                }
-              >
-
-                <h3>
-                  Missing Keywords
-                </h3>
-
-                <div
-                  style={
-                    styles.tags
-                  }
-                >
-
-                  {optimizedResume.missing_keywords.map(
-                    (
-                      keyword,
-                      index,
-                    ) => (
-
-                      <span
-                        key={index}
-                        style={
-                          styles.warningTag
-                        }
-                      >
-                        {keyword}
-                      </span>
-
-                    ),
-                  )}
-
-                </div>
-
-              </div>
-
-            )}
-
           </section>
-
         )}
+      </main>
 
-      </div>
+      {/* =====================================================
+          4. PDF PREVIEW MODAL
+      ===================================================== */}
+      {showPdfPreview && (
+        <div
+          className="pdf-preview-overlay"
+          role="dialog"
+          aria-modal="true"
+          onClick={() => setShowPdfPreview(false)}
+        >
+          <div
+            className="pdf-preview-modal"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="pdf-modal-header">
+              <div className="pdf-modal-title-group">
+                <h3>ATS Resume Preview</h3>
+                <p>Generated PDF for target role: {targetRole}</p>
+              </div>
 
+              <div className="pdf-modal-controls">
+                <button
+                  type="button"
+                  className="download-pdf-btn"
+                  onClick={handleDownloadPDF}
+                  style={{ padding: "8px 16px", fontSize: "13px" }}
+                >
+                  ⬇ Download PDF
+                </button>
+                <button
+                  type="button"
+                  className="pdf-modal-close-btn"
+                  onClick={() => setShowPdfPreview(false)}
+                  aria-label="Close preview"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+
+            <div className="pdf-modal-body">
+              {pdfBlobUrl ? (
+                <iframe
+                  src={pdfBlobUrl}
+                  title="ATS Resume PDF Viewer"
+                  className="pdf-preview-iframe"
+                />
+              ) : (
+                <div style={{ textAlign: "center", padding: "80px 20px", color: "#94a3b8" }}>
+                  Loading PDF preview...
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
-}
-
-
-export default Resume
-
-
-// ============================================================
-// STYLES
-// ============================================================
-
-const styles: Record<
-  string,
-  React.CSSProperties
-> = {
-
-  page: {
-    minHeight: "100vh",
-    background: "#030712",
-    color: "#f9fafb",
-    padding: "40px 20px",
-  },
-
-  container: {
-    maxWidth: "1100px",
-    margin: "0 auto",
-  },
-
-  header: {
-    marginBottom: "30px",
-  },
-
-  title: {
-    fontSize: "36px",
-    marginBottom: "8px",
-  },
-
-  subtitle: {
-    color: "#9ca3af",
-    fontSize: "16px",
-  },
-
-  card: {
-    background: "#111827",
-    border: "1px solid #1f2937",
-    borderRadius: "16px",
-    padding: "28px",
-    marginBottom: "24px",
-  },
-
-  sectionTitle: {
-    fontSize: "24px",
-    marginTop: 0,
-    marginBottom: "20px",
-  },
-
-  uploadBox: {
-    border: "1px dashed #374151",
-    borderRadius: "14px",
-    padding: "50px 20px",
-    textAlign: "center",
-  },
-
-  uploadIcon: {
-    fontSize: "40px",
-    marginBottom: "10px",
-  },
-
-  resumeRow: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    gap: "20px",
-    flexWrap: "wrap",
-  },
-
-  filename: {
-    fontSize: "18px",
-    fontWeight: 600,
-    marginBottom: "6px",
-  },
-
-  muted: {
-    color: "#9ca3af",
-    lineHeight: 1.6,
-  },
-
-  buttonGroup: {
-    display: "flex",
-    gap: "10px",
-    alignItems: "center",
-  },
-
-  primaryButton: {
-    display: "inline-block",
-    border: "none",
-    borderRadius: "9px",
-    padding: "12px 20px",
-    background: "#6366f1",
-    color: "#ffffff",
-    fontWeight: 600,
-    cursor: "pointer",
-    textDecoration: "none",
-  },
-
-  secondaryButton: {
-    display: "inline-block",
-    border: "1px solid #374151",
-    borderRadius: "9px",
-    padding: "11px 18px",
-    background: "#1f2937",
-    color: "#ffffff",
-    fontWeight: 600,
-    cursor: "pointer",
-  },
-
-  dangerButton: {
-    border: "1px solid #7f1d1d",
-    borderRadius: "9px",
-    padding: "11px 18px",
-    background: "#450a0a",
-    color: "#fecaca",
-    fontWeight: 600,
-    cursor: "pointer",
-  },
-
-  tool: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    gap: "30px",
-    padding: "22px 0",
-    borderBottom: "1px solid #1f2937",
-  },
-
-  toolContent: {
-    flex: 1,
-  },
-
-  input: {
-    width: "100%",
-    maxWidth: "500px",
-    boxSizing: "border-box",
-    marginTop: "12px",
-    padding: "12px 14px",
-    borderRadius: "9px",
-    border: "1px solid #374151",
-    background: "#030712",
-    color: "#ffffff",
-    fontSize: "15px",
-    outline: "none",
-  },
-
-  error: {
-    background: "#450a0a",
-    border: "1px solid #7f1d1d",
-    color: "#fecaca",
-    padding: "14px 18px",
-    borderRadius: "10px",
-    marginBottom: "20px",
-  },
-
-  success: {
-    background: "#052e16",
-    border: "1px solid #166534",
-    color: "#bbf7d0",
-    padding: "14px 18px",
-    borderRadius: "10px",
-    marginBottom: "20px",
-  },
-
-  loading: {
-    minHeight: "100vh",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    background: "#030712",
-    color: "#ffffff",
-    fontSize: "18px",
-  },
-
-  scoreBox: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    gap: "20px",
-    padding: "24px",
-    background: "#030712",
-    borderRadius: "14px",
-    marginBottom: "25px",
-  },
-
-  scoreLabel: {
-    color: "#9ca3af",
-    fontSize: "13px",
-    fontWeight: 700,
-    letterSpacing: "1px",
-  },
-
-  score: {
-    fontSize: "52px",
-    fontWeight: 800,
-    marginTop: "5px",
-  },
-
-  scoreMax: {
-    fontSize: "20px",
-    color: "#9ca3af",
-    marginLeft: "5px",
-  },
-
-  scoreMessage: {
-    color: "#a5b4fc",
-    fontWeight: 600,
-  },
-
-  resultBlock: {
-    marginTop: "28px",
-  },
-
-  tags: {
-    display: "flex",
-    flexWrap: "wrap",
-    gap: "8px",
-    marginTop: "12px",
-  },
-
-  tag: {
-    background: "#1e293b",
-    border: "1px solid #334155",
-    color: "#cbd5e1",
-    padding: "6px 10px",
-    borderRadius: "999px",
-    fontSize: "13px",
-  },
-
-  warningTag: {
-    background: "#422006",
-    border: "1px solid #92400e",
-    color: "#fde68a",
-    padding: "6px 10px",
-    borderRadius: "999px",
-    fontSize: "13px",
-  },
-
-  roleGrid: {
-    display: "grid",
-    gridTemplateColumns:
-      "repeat(auto-fit, minmax(250px, 1fr))",
-    gap: "15px",
-    marginTop: "15px",
-  },
-
-  roleCard: {
-    background: "#030712",
-    border: "1px solid #1f2937",
-    borderRadius: "12px",
-    padding: "18px",
-  },
-
-  roleHeader: {
-    display: "flex",
-    justifyContent: "space-between",
-    gap: "15px",
-    marginBottom: "8px",
-  },
-
-  optimizedHeader: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    gap: "20px",
-    flexWrap: "wrap",
-  },
-
-  optimizedScore: {
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    background: "#030712",
-    padding: "15px 22px",
-    borderRadius: "12px",
-  },
-
-  experienceItem: {
-    padding: "18px 0",
-    borderBottom: "1px solid #1f2937",
-  },
 }

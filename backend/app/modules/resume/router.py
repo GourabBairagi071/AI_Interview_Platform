@@ -1,4 +1,5 @@
 from pathlib import Path
+import json
 import shutil
 
 from fastapi import (
@@ -9,6 +10,7 @@ from fastapi import (
     UploadFile,
     status,
 )
+from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -24,6 +26,7 @@ from app.modules.resume.schema import (
     ResumeUploadResponse,
 )
 
+from app.modules.payments.service import check_quota
 from app.modules.resume.service import (
     analyze_resume_file,
     create_or_update_resume,
@@ -90,7 +93,25 @@ async def get_resume(
             detail="Resume not found",
         )
 
-    return resume
+    analysis_data = None
+    if resume.file_url:
+        file_path = Path(resume.file_url.lstrip("/"))
+        analysis_path = file_path.with_suffix(".analysis.json")
+        if analysis_path.exists():
+            try:
+                analysis_data = json.loads(analysis_path.read_text(encoding="utf-8"))
+            except Exception:
+                analysis_data = None
+
+    return {
+        "id": resume.id,
+        "user_id": resume.user_id,
+        "filename": resume.filename,
+        "file_url": resume.file_url,
+        "uploaded_at": resume.uploaded_at,
+        "updated_at": resume.updated_at,
+        "analysis": analysis_data,
+    }
 
 
 # ============================================================
@@ -112,6 +133,12 @@ async def upload_resume(
         get_db
     ),
 ):
+    allowed, reason = await check_quota(db, current_user.id, "resume_analysis")
+    if not allowed:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=reason,
+        )
 
     # --------------------------------------------------------
     # Validate filename
@@ -139,6 +166,25 @@ async def upload_resume(
             detail=(
                 "Only PDF and DOCX files are allowed"
             ),
+        )
+
+    # --------------------------------------------------------
+    # Validate file size (10 MB limit) and magic bytes
+    # --------------------------------------------------------
+    MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
+
+    header_bytes = await file.read(4)
+    await file.seek(0)
+
+    if extension == ".pdf" and not header_bytes.startswith(b"%PDF"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid PDF file format",
+        )
+    elif extension == ".docx" and not header_bytes.startswith(b"PK\x03\x04"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid DOCX file format",
         )
 
     # --------------------------------------------------------
@@ -176,18 +222,26 @@ async def upload_resume(
     )
 
     # --------------------------------------------------------
-    # Save uploaded file
+    # Save uploaded file with size cap
     # --------------------------------------------------------
 
     try:
-
+        total_size = 0
         with file_path.open("wb") as buffer:
+            while chunk := await file.read(64 * 1024):
+                total_size += len(chunk)
+                if total_size > MAX_FILE_SIZE:
+                    buffer.close()
+                    if file_path.exists():
+                        file_path.unlink()
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="File size exceeds maximum allowed limit of 10MB",
+                    )
+                buffer.write(chunk)
 
-            shutil.copyfileobj(
-                file.file,
-                buffer,
-            )
-
+    except HTTPException:
+        raise
     except Exception as exc:
 
         raise HTTPException(
@@ -217,6 +271,14 @@ async def upload_resume(
             filename=file.filename,
             file_url=file_url,
         )
+
+        # Remove stale analysis cache on fresh upload
+        analysis_path = file_path.with_suffix(".analysis.json")
+        if analysis_path.exists():
+            try:
+                analysis_path.unlink()
+            except OSError:
+                pass
 
     except Exception as exc:
 
@@ -318,6 +380,19 @@ async def analyze_current_resume(
         ) from exc
 
     # --------------------------------------------------------
+    # Persist analysis to file cache
+    # --------------------------------------------------------
+
+    try:
+        analysis_path = file_path.with_suffix(".analysis.json")
+        analysis_path.write_text(
+            json.dumps(result["analysis"], ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+    except Exception:
+        pass
+
+    # --------------------------------------------------------
     # Return analysis
     # --------------------------------------------------------
 
@@ -392,15 +467,16 @@ async def optimize_current_resume(
         )
 
     # --------------------------------------------------------
-    # Generate optimized resume
+    # Generate optimized resume and ATS PDF
     # --------------------------------------------------------
 
     try:
 
-        optimized_resume = (
+        result = (
             await generate_optimized_resume_from_file(
                 file_path=file_path,
                 target_role=target_role,
+                user_name=current_user.full_name,
             )
         )
 
@@ -422,14 +498,58 @@ async def optimize_current_resume(
         ) from exc
 
     # --------------------------------------------------------
-    # Return optimized resume
+    # Persist optimized PDF for direct download/view
+    # --------------------------------------------------------
+
+    pdf_filename = f"{current_user.id}_ats_optimized.pdf"
+    pdf_path = UPLOAD_DIR / pdf_filename
+
+    try:
+        with pdf_path.open("wb") as pdf_file:
+            pdf_file.write(result["pdf_bytes"])
+    except Exception:
+        # Non-fatal if base64 is already returned
+        pass
+
+    # --------------------------------------------------------
+    # Return optimized resume with PDF
     # --------------------------------------------------------
 
     return {
         "message": "Resume optimized successfully",
         "resume": resume,
-        "optimized_resume": optimized_resume,
+        "optimized_resume": result["optimized_resume"],
+        "pdf_url": "/api/v1/resume/optimized-pdf",
+        "pdf_base64": result["pdf_base64"],
     }
+
+
+# ============================================================
+# GET OPTIMIZED RESUME PDF
+# GET /api/v1/resume/optimized-pdf
+# ============================================================
+
+@router.get(
+    "/optimized-pdf",
+)
+async def get_optimized_resume_pdf(
+    current_user: User = Depends(
+        get_current_user
+    ),
+):
+    pdf_path = UPLOAD_DIR / f"{current_user.id}_ats_optimized.pdf"
+
+    if not pdf_path.exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Optimized resume PDF not found. Please generate an ATS resume first.",
+        )
+
+    return FileResponse(
+        path=pdf_path,
+        media_type="application/pdf",
+        filename=f"ATS_Resume_{current_user.id}.pdf",
+    )
 
 
 # ============================================================
@@ -478,6 +598,13 @@ async def delete_resume(
 
         try:
             file_path.unlink()
+        except OSError:
+            pass
+
+    analysis_path = file_path.with_suffix(".analysis.json")
+    if analysis_path.exists():
+        try:
+            analysis_path.unlink()
         except OSError:
             pass
 

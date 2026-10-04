@@ -9,6 +9,9 @@ from app.core.security import hash_password, verify_password
 from app.modules.auth.model import PasswordResetToken, User
 from app.modules.auth.schema import SignupRequest
 from app.modules.auth.model import PasswordResetToken, User, UserProfile
+from google.oauth2 import id_token
+from google.auth.transport import requests
+from app.core.config import settings
 
 async def create_user(
     db: AsyncSession,
@@ -28,6 +31,61 @@ async def create_user(
         full_name=data.full_name,
         email=data.email,
         hashed_password=hash_password(data.password),
+    )
+
+    db.add(user)
+    await db.commit()
+    await db.refresh(user)
+
+    return user
+
+
+async def authenticate_google_user(
+    db: AsyncSession,
+    credential: str,
+) -> User:
+
+    try:
+        google_user = id_token.verify_oauth2_token(
+            credential,
+            requests.Request(),
+            settings.google_client_id,
+        )
+    except ValueError as exc:
+        raise ValueError("Invalid Google credential") from exc
+
+    google_id = google_user.get("sub")
+    email = google_user.get("email")
+    full_name = google_user.get("name") or email
+
+    if not google_id or not email:
+        raise ValueError("Google account information is incomplete")
+
+    result = await db.execute(
+        select(User).where(User.email == email)
+    )
+
+    user = result.scalar_one_or_none()
+
+    if user:
+        if user.google_id and user.google_id != google_id:
+            raise ValueError("Google account does not match this user")
+
+        user.google_id = google_id
+        user.is_verified = True
+
+        await db.commit()
+        await db.refresh(user)
+
+        return user
+
+    user = User(
+        full_name=full_name,
+        email=email,
+        google_id=google_id,
+        hashed_password=None,
+        is_verified=True,
+        is_active=True,
     )
 
     db.add(user)

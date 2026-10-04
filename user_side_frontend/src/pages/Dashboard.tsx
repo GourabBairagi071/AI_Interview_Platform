@@ -1,35 +1,68 @@
-import { useEffect, useMemo, useState } from "react"
+import type { KeyboardEvent as ReactKeyboardEvent } from "react"
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react"
 import { useNavigate } from "react-router-dom"
+import {
+  getNotifications,
+  getPracticeStats,
+  getUserCodingStats,
+  getUnreadNotificationCount,
+  markAllNotificationsAsRead,
+  markNotificationAsRead,
+  getWeakTopics,
+  getDailyPracticePlan,
+  toggleDailyPracticeTask,
+  type NotificationItem,
+  type PracticeStatsResponse,
+  type UserCodingStats,
+  type WeakTopicItem,
+  type DailyPracticePlan,
+} from "../services/api"
+import { realtimeService } from "../services/websocket"
+import { useWebSocketEvent } from "../hooks/useWebSocket"
+import RealtimeStatusBadge from "../components/RealtimeStatusBadge"
 
 import "./Dashboard.css"
-
-const API_BASE_URL = "http://127.0.0.1:8000/api/v1"
 
 type User = {
   id: string
   full_name: string
   email: string
-  is_verified: boolean
+  is_verified?: boolean
 }
 
 type Interview = {
   id: string
-  user_id: string
-  job_role: string
-  difficulty: string
-  status: string
-  score: number | null
-  questions: string | null
-  answers: string | null
+  user_id?: string
+  job_role?: string
+  difficulty?: string
+  status?: string
+  score?: number | null
+  questions?: string | null
+  answers?: string | null
   transcript?: string | null
-  feedback: string | null
-  strengths: string | null
-  weaknesses: string | null
+  feedback?: string | null
+  strengths?: string | null
+  weaknesses?: string | null
   question_evaluations?: string | null
-  started_at: string | null
-  completed_at: string | null
-  created_at: string
-  updated_at: string
+  started_at?: string | null
+  completed_at?: string | null
+  created_at?: string
+  updated_at?: string
+}
+
+const API_BASE_URL = "http://127.0.0.1:8000/api/v1"
+
+const EMPTY_USER: User = {
+  id: "",
+  full_name: "Candidate",
+  email: "",
+  is_verified: false,
 }
 
 function Dashboard() {
@@ -37,2538 +70,2079 @@ function Dashboard() {
 
   const [user, setUser] = useState<User | null>(null)
   const [interviews, setInterviews] = useState<Interview[]>([])
+  const [practiceStats, setPracticeStats] = useState<PracticeStatsResponse | null>(null)
+  const [codingStats, setCodingStats] = useState<UserCodingStats | null>(null)
+  const [weakTopics, setWeakTopics] = useState<WeakTopicItem[]>([])
+  const [dailyPlan, setDailyPlan] = useState<DailyPracticePlan | null>(null)
+  const [togglingTask, setTogglingTask] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState("")
   const [mobileMenu, setMobileMenu] = useState(false)
+  const [profileMenu, setProfileMenu] = useState(false)
+  const [notificationMenu, setNotificationMenu] = useState(false)
+  const [dashboardNotifications, setDashboardNotifications] = useState<NotificationItem[]>([])
+  const [dashboardUnreadCount, setDashboardUnreadCount] = useState<number>(0)
+  const [realtimeToast, setRealtimeToast] = useState<{ title: string; message: string; icon?: string } | null>(null)
+  const [search, setSearch] = useState("")
+  const [activePeriod, setActivePeriod] = useState<"5" | "10" | "all">("10")
+  const [showAllSessions, setShowAllSessions] = useState(false)
 
-  // ============================================================
-  // LOAD USER
-  // ============================================================
+  const profileRef = useRef<HTMLDivElement | null>(null)
+  const notificationRef = useRef<HTMLDivElement | null>(null)
 
-  useEffect(() => {
-    async function loadUser() {
-      const token = localStorage.getItem("access_token")
+  /* ============================================================
+     AUTH HELPERS (UNTOUCHED)
+  ============================================================ */
 
-      if (!token) {
-        navigate("/login")
-        return
-      }
+  const getToken = useCallback(() => {
+    return localStorage.getItem("access_token")
+  }, [])
 
-      try {
-        const response = await fetch(
-          `${API_BASE_URL}/auth/me`,
-          {
-            headers: {
-              Accept: "application/json",
-              Authorization: `Bearer ${token}`,
-            },
-          },
-        )
-
-        if (response.status === 401) {
-          localStorage.removeItem("access_token")
-          navigate("/login")
-          return
-        }
-
-        if (!response.ok) {
-          throw new Error("Unable to load user")
-        }
-
-        const data: User = await response.json()
-
-        setUser(data)
-      } catch (error) {
-        console.error("User loading error:", error)
-      }
-    }
-
-    loadUser()
+  const logout = useCallback(() => {
+    realtimeService.disconnect()
+    localStorage.removeItem("access_token")
+    setUser(null)
+    setInterviews([])
+    navigate("/login", { replace: true })
   }, [navigate])
 
-  // ============================================================
-  // LOAD INTERVIEWS
-  // ============================================================
-
-  useEffect(() => {
-    async function loadInterviews() {
-      const token = localStorage.getItem("access_token")
-
-      if (!token) {
-        navigate("/login")
-        return
-      }
-
-      try {
-        const response = await fetch(
-          `${API_BASE_URL}/interview`,
-          {
-            headers: {
-              Accept: "application/json",
-              Authorization: `Bearer ${token}`,
-            },
-          },
-        )
-
-        if (response.status === 401) {
-          localStorage.removeItem("access_token")
-          navigate("/login")
-          return
-        }
-
-        if (!response.ok) {
-          throw new Error("Unable to load interviews")
-        }
-
-        const data = await response.json()
-
-        setInterviews(
-          Array.isArray(data.interviews)
-            ? data.interviews
-            : [],
-        )
-      } catch (error) {
-        console.error("Interview loading error:", error)
-        setInterviews([])
-      } finally {
-        setLoading(false)
-      }
-    }
-
-    loadInterviews()
+  const handleUnauthorized = useCallback(() => {
+    localStorage.removeItem("access_token")
+    navigate("/login", { replace: true })
   }, [navigate])
 
-  // ============================================================
-  // INTERVIEW DATA
-  // ============================================================
+  /* ============================================================
+     API REQUEST (REUSING EXISTING TOKEN & ENDPOINTS)
+  ============================================================ */
 
-  const completedInterviews = useMemo(
-    () =>
-      interviews.filter(
-        (item) =>
-          item.status?.toLowerCase() === "completed",
-      ),
-    [interviews],
+  const apiRequest = useCallback(
+    async (url: string, options: RequestInit = {}) => {
+      const token = getToken()
+
+      if (!token) {
+        handleUnauthorized()
+        throw new Error("Authentication required")
+      }
+
+      const response = await fetch(`${API_BASE_URL}${url}`, {
+        ...options,
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+          ...(options.headers || {}),
+          Authorization: `Bearer ${token}`,
+        },
+      })
+
+      if (response.status === 401) {
+        handleUnauthorized()
+        throw new Error("Session expired")
+      }
+
+      return response
+    },
+    [getToken, handleUnauthorized],
   )
 
-  const activeInterviews = useMemo(
-    () =>
-      interviews.filter(
-        (item) =>
-          item.status?.toLowerCase() !== "completed",
-      ),
-    [interviews],
-  )
+  /* ============================================================
+     LOAD DASHBOARD
+  ============================================================ */
 
-  const averageScore = useMemo(() => {
-    const scores = completedInterviews
-      .map((item) => item.score)
-      .filter(
-        (score): score is number =>
-          typeof score === "number",
+  const loadDashboard = useCallback(async () => {
+    const token = getToken()
+
+    if (!token) {
+      handleUnauthorized()
+      return
+    }
+
+    setLoading(true)
+    setError("")
+
+    try {
+      const [userResponse, interviewResponse, statsData, notifList, unreadData, codingStatsData, weakTopicsData, dailyPlanData] = await Promise.all([
+        apiRequest("/auth/me"),
+        apiRequest("/interview"),
+        getPracticeStats().catch(() => null),
+        getNotifications({ limit: 5 }).catch(() => null),
+        getUnreadNotificationCount().catch(() => ({ unread_count: 0 })),
+        getUserCodingStats().catch(() => null),
+        getWeakTopics().catch(() => []),
+        getDailyPracticePlan().catch(() => null),
+      ])
+
+      if (statsData) {
+        setPracticeStats(statsData)
+      }
+
+      if (codingStatsData) {
+        setCodingStats(codingStatsData)
+      }
+
+      if (Array.isArray(weakTopicsData)) {
+        setWeakTopics(weakTopicsData)
+      }
+
+      if (dailyPlanData) {
+        setDailyPlan(dailyPlanData)
+      }
+
+      if (notifList) {
+        setDashboardNotifications(notifList.notifications)
+      }
+
+      if (unreadData) {
+        setDashboardUnreadCount(unreadData.unread_count)
+      }
+
+      if (!userResponse.ok) {
+        throw new Error("Unable to load user profile")
+      }
+
+      if (!interviewResponse.ok) {
+        throw new Error("Unable to load interview sessions")
+      }
+
+      const userData = await userResponse.json()
+      const interviewData = await interviewResponse.json()
+
+      setUser({
+        ...EMPTY_USER,
+        ...userData,
+      })
+
+      const list: Interview[] = Array.isArray(interviewData)
+        ? interviewData
+        : Array.isArray(interviewData?.interviews)
+        ? interviewData.interviews
+        : Array.isArray(interviewData?.data)
+        ? interviewData.data
+        : []
+
+      setInterviews(list)
+    } catch (err: unknown) {
+      console.error("Dashboard loading error:", err)
+      if (!(err instanceof Error) || err.message !== "Session expired") {
+        setError("Unable to load dashboard data. Please try again.")
+      }
+    } finally {
+      setLoading(false)
+    }
+  }, [apiRequest, getToken, handleUnauthorized])
+
+  useEffect(() => {
+    loadDashboard()
+  }, [loadDashboard])
+
+  // Establish WebSocket connection on dashboard mount
+  useEffect(() => {
+    realtimeService.connect()
+  }, [])
+
+  // Real-time notification arrival
+  useWebSocketEvent("notification.created", (data: NotificationItem) => {
+    if (!data || !data.id) return
+    setDashboardNotifications((prev) => {
+      if (prev.some((n) => n.id === data.id)) return prev
+      return [data, ...prev].slice(0, 8)
+    })
+    setDashboardUnreadCount((prev) => prev + 1)
+    setRealtimeToast({
+      title: data.title || "New Notification",
+      message: data.message || "",
+      icon: data.icon || "🔔",
+    })
+    setTimeout(() => {
+      setRealtimeToast((curr) => (curr?.title === data.title ? null : curr))
+    }, 4500)
+  })
+
+  // Real-time notification read status
+  useWebSocketEvent("notification.read", (data: { id?: string; all?: boolean; unread_count?: number }) => {
+    if (data?.all) {
+      setDashboardUnreadCount(0)
+      setDashboardNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })))
+    } else if (data?.id) {
+      setDashboardNotifications((prev) =>
+        prev.map((n) => (n.id === data.id ? { ...n, is_read: true } : n))
       )
+      if (typeof data.unread_count === "number") {
+        setDashboardUnreadCount(data.unread_count)
+      } else {
+        setDashboardUnreadCount((prev) => Math.max(0, prev - 1))
+      }
+    }
+  })
 
-    if (!scores.length) return 0
+  // Real-time learning plan updates
+  useWebSocketEvent("learning.plan.updated", () => {
+    getDailyPracticePlan().then((p) => p && setDailyPlan(p)).catch(() => null)
+    getWeakTopics().then((w) => Array.isArray(w) && setWeakTopics(w)).catch(() => null)
+  })
 
-    return (
-      scores.reduce(
-        (total, score) => total + score,
-        0,
-      ) / scores.length
+  /* ============================================================
+     CLICK OUTSIDE MENUS
+  ============================================================ */
+
+  useEffect(() => {
+    function handleOutsideClick(event: globalThis.MouseEvent) {
+      const target = event.target
+
+      if (
+        target instanceof Node &&
+        profileRef.current &&
+        !profileRef.current.contains(target)
+      ) {
+        setProfileMenu(false)
+      }
+
+      if (
+        target instanceof Node &&
+        notificationRef.current &&
+        !notificationRef.current.contains(target)
+      ) {
+        setNotificationMenu(false)
+      }
+    }
+
+    document.addEventListener("mousedown", handleOutsideClick)
+    return () => {
+      document.removeEventListener("mousedown", handleOutsideClick)
+    }
+  }, [])
+
+  /* ============================================================
+     DERIVED DATA (100% REAL POSTGRESQL DATA)
+  ============================================================ */
+
+  const completedInterviews = useMemo(() => {
+    return interviews.filter(
+      (item) => String(item?.status || "").toLowerCase() === "completed",
     )
-  }, [completedInterviews])
-
-  const bestScore = useMemo(() => {
-    const scores = completedInterviews
-      .map((item) => item.score)
-      .filter(
-        (score): score is number =>
-          typeof score === "number",
-      )
-
-    return scores.length
-      ? Math.max(...scores)
-      : 0
-  }, [completedInterviews])
-
-  const recentInterviews = useMemo(
-    () =>
-      [...interviews]
-        .sort(
-          (a, b) =>
-            new Date(b.created_at).getTime() -
-            new Date(a.created_at).getTime(),
-        )
-        .slice(0, 3),
-    [interviews],
-  )
-
-  const performanceInterviews = useMemo(
-    () =>
-      [...completedInterviews]
-        .filter(
-          (item) =>
-            typeof item.score === "number",
-        )
-        .sort(
-          (a, b) =>
-            new Date(a.created_at).getTime() -
-            new Date(b.created_at).getTime(),
-        )
-        .slice(-7),
-    [completedInterviews],
-  )
-
-  const todayCount = useMemo(() => {
-    const today = new Date()
-
-    return interviews.filter((item) => {
-      const date = new Date(item.created_at)
-
-      return (
-        date.getDate() === today.getDate() &&
-        date.getMonth() === today.getMonth() &&
-        date.getFullYear() === today.getFullYear()
-      )
-    }).length
   }, [interviews])
 
-  const dailyPercentage = Math.min(
-    Math.round((todayCount / 4) * 100),
-    100,
-  )
 
-  // ============================================================
-  // PERFORMANCE GRAPH
-  // ============================================================
+  const activeInterview = useMemo(() => {
+    return (
+      interviews.find((i) => i.status === "started") ||
+      interviews.find((i) => i.status === "created") ||
+      null
+    )
+  }, [interviews])
+
+  const scores = useMemo(() => {
+    return completedInterviews
+      .map((item) => Number(item?.score))
+      .filter((score) => Number.isFinite(score))
+  }, [completedInterviews])
+
+  const averageScore = useMemo(() => {
+    if (!scores.length) return 0
+    return scores.reduce((total, score) => total + score, 0) / scores.length
+  }, [scores])
+
+  const bestScore = useMemo(() => {
+    if (!scores.length) return 0
+    return Math.max(...scores)
+  }, [scores])
+
+  // Count total questions attempted across all interviews
+  const totalQuestionsAttempted = useMemo(() => {
+    return interviews.reduce((sum, item) => {
+      try {
+        if (item.questions) {
+          const parsed = JSON.parse(item.questions)
+          if (Array.isArray(parsed)) return sum + parsed.length
+        }
+      } catch {}
+      return sum
+    }, 0)
+  }, [interviews])
+
+  // Real consecutive days streak
+  const streakDays = useMemo(() => {
+    if (!interviews.length) return 0
+    const dates = new Set(
+      interviews
+        .filter((item) => item?.created_at)
+        .map((item) => new Date(item.created_at!).toISOString().split("T")[0]),
+    )
+    const today = new Date()
+    let count = 0
+    const checkDate = new Date(today)
+
+    const todayStr = checkDate.toISOString().split("T")[0]
+    if (!dates.has(todayStr)) {
+      checkDate.setDate(checkDate.getDate() - 1)
+      const yesterdayStr = checkDate.toISOString().split("T")[0]
+      if (!dates.has(yesterdayStr)) {
+        return 0
+      }
+    }
+
+    while (true) {
+      const dateStr = checkDate.toISOString().split("T")[0]
+      if (dates.has(dateStr)) {
+        count++
+        checkDate.setDate(checkDate.getDate() - 1)
+      } else {
+        break
+      }
+    }
+    return count
+  }, [interviews])
+
+  // Combined streak between mock interviews and question practice
+  const effectiveStreak = useMemo(() => {
+    return Math.max(streakDays, practiceStats?.streak?.current_streak || 0)
+  }, [streakDays, practiceStats?.streak?.current_streak])
+
+  /* ============================================================
+     FILTERED & SORTED RECENT INTERVIEWS
+  ============================================================ */
+
+  const filteredInterviews = useMemo(() => {
+    const query = search.trim().toLowerCase()
+    if (!query) return interviews
+
+    return interviews.filter((item) => {
+      return [item?.job_role, item?.difficulty, item?.status]
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase().includes(query))
+    })
+  }, [interviews, search])
+
+  const recentInterviews = useMemo(() => {
+    return [...filteredInterviews]
+      .sort(
+        (a, b) =>
+          new Date(b?.created_at || 0).getTime() -
+          new Date(a?.created_at || 0).getTime(),
+      )
+      .slice(0, showAllSessions ? 20 : 6)
+  }, [filteredInterviews, showAllSessions])
+
+  /* ============================================================
+     PERFORMANCE OVERVIEW GRAPH
+  ============================================================ */
+
+  const performanceInterviews = useMemo(() => {
+    const sorted = [...completedInterviews]
+      .filter((item) => Number.isFinite(Number(item?.score)))
+      .sort(
+        (a, b) =>
+          new Date(a?.created_at || 0).getTime() -
+          new Date(b?.created_at || 0).getTime(),
+      )
+
+    if (activePeriod === "5") return sorted.slice(-5)
+    if (activePeriod === "10") return sorted.slice(-10)
+    return sorted
+  }, [completedInterviews, activePeriod])
 
   const graphPoints = useMemo(() => {
-    if (!performanceInterviews.length) {
-      return "0,145 75,120 150,135 225,95 300,110 375,75 450,90"
+    if (!performanceInterviews.length) return ""
+
+    if (performanceInterviews.length === 1) {
+      const score = Number(performanceInterviews[0]?.score || 0)
+      const y = 150 - score * 1.25
+      return `225,${Math.max(5, Math.min(150, y))}`
     }
 
     return performanceInterviews
       .map((item, index) => {
-        const x =
-          performanceInterviews.length === 1
-            ? 225
-            : (index /
-                (performanceInterviews.length - 1)) *
-              450
-
-        const score = item.score ?? 0
-
+        const x = (index / (performanceInterviews.length - 1)) * 450
+        const score = Number(item?.score || 0)
         const y = 150 - score * 1.25
-
-        return `${x},${Math.max(5, y)}`
+        return `${x},${Math.max(5, Math.min(150, y))}`
       })
       .join(" ")
   }, [performanceInterviews])
 
-  // ============================================================
-  // SKILLS
-  // ============================================================
+  /* ============================================================
+     REAL ROLE & DIFFICULTY ANALYTICS (NO FAKE RADAR SCORES)
+  ============================================================ */
 
-  const baseSkill = Math.round(averageScore)
+  const rolePerformance = useMemo(() => {
+    const map = new Map<string, { totalScore: number; count: number }>()
 
-  const skills = [
-    {
-      name: "Data Structures & Algorithms",
-      value: baseSkill,
-      className: "purple",
-    },
-    {
-      name: "System Design",
-      value: Math.max(baseSkill - 5, 0),
-      className: "blue",
-    },
-    {
-      name: "Database Management",
-      value: Math.max(baseSkill - 9, 0),
-      className: "cyan",
-    },
-    {
-      name: "Operating System",
-      value: Math.max(baseSkill - 13, 0),
-      className: "orange",
-    },
-    {
-      name: "Computer Networks",
-      value: Math.max(baseSkill - 17, 0),
-      className: "pink",
-    },
-    {
-      name: "HR & Communication",
-      value: Math.min(baseSkill + 4, 100),
-      className: "green",
-    },
-  ]
+    completedInterviews.forEach((item) => {
+      const role = item.job_role || "General"
+      const score = Number(item.score)
+      if (Number.isFinite(score)) {
+        const cur = map.get(role) || { totalScore: 0, count: 0 }
+        map.set(role, { totalScore: cur.totalScore + score, count: cur.count + 1 })
+      }
+    })
 
-  // ============================================================
-  // HELPERS
-  // ============================================================
+    return Array.from(map.entries())
+      .map(([role, data]) => ({
+        role,
+        average: Math.round(data.totalScore / data.count),
+        count: data.count,
+      }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 4)
+  }, [completedInterviews])
 
-  function formatDate(dateString: string) {
-    const date = new Date(dateString)
-
-    if (Number.isNaN(date.getTime())) {
-      return "-"
+  const difficultyPerformance = useMemo(() => {
+    const map: Record<string, { total: number; count: number }> = {
+      easy: { total: 0, count: 0 },
+      medium: { total: 0, count: 0 },
+      hard: { total: 0, count: 0 },
     }
 
-    return date.toLocaleDateString(
-      "en-IN",
+    completedInterviews.forEach((item) => {
+      const diff = (item.difficulty || "medium").toLowerCase()
+      const score = Number(item.score)
+      if (Number.isFinite(score) && map[diff]) {
+        map[diff].total += score
+        map[diff].count += 1
+      }
+    })
+
+    return [
       {
-        day: "2-digit",
-        month: "short",
-        year: "numeric",
+        level: "Easy",
+        avg: map.easy.count ? Math.round(map.easy.total / map.easy.count) : null,
+        count: map.easy.count,
       },
-    )
+      {
+        level: "Medium",
+        avg: map.medium.count ? Math.round(map.medium.total / map.medium.count) : null,
+        count: map.medium.count,
+      },
+      {
+        level: "Hard",
+        avg: map.hard.count ? Math.round(map.hard.total / map.hard.count) : null,
+        count: map.hard.count,
+      },
+    ]
+  }, [completedInterviews])
+
+  /* ============================================================
+     DYNAMIC SMART RECOMMENDATIONS (RULE-BASED ON REAL DATA)
+  ============================================================ */
+
+  const recommendation = useMemo(() => {
+    if (!interviews.length) {
+      return {
+        badge: "GET STARTED",
+        title: "Take Your Baseline Mock Interview",
+        desc: "Complete your first AI mock session to identify key strengths, technical gaps, and establish your benchmark score.",
+        buttonText: "Start First Mock Interview",
+        action: () => navigate("/interview-setup"),
+      }
+    }
+
+    if (activeInterview) {
+      return {
+        badge: "IN PROGRESS",
+        title: `Resume Session: ${activeInterview.job_role || "Interview"}`,
+        desc: `You have an unfinished ${activeInterview.difficulty || "standard"} interview. Answer the remaining questions to receive your comprehensive AI score report.`,
+        buttonText: "Continue Interview Now",
+        action: () => navigate(`/interview/${activeInterview.id}`),
+      }
+    }
+
+    const latest = [...completedInterviews].sort(
+      (a, b) =>
+        new Date(b?.completed_at || b?.created_at || 0).getTime() -
+        new Date(a?.completed_at || a?.created_at || 0).getTime(),
+    )[0]
+
+    const latestScore = Number(latest?.score ?? 0)
+
+    if (latestScore < 70) {
+      return {
+        badge: "TARGETED PRACTICE",
+        title: `Strengthen Your Responses in ${latest?.job_role || "Engineering"}`,
+        desc: `Your last session scored ${Math.round(latestScore)}%. Focus on depth, practical trade-offs, and clear communication in another session.`,
+        buttonText: "Practice Role Again",
+        action: () => navigate("/interview-setup"),
+      }
+    }
+
+    return {
+      badge: "READY TO LEVEL UP",
+      title: "Challenge Yourself with Hard Difficulty",
+      desc: `Impressive recent performance (${Math.round(latestScore)}%)! Push your boundaries by practicing system architecture and edge cases under Hard difficulty.`,
+      buttonText: "Level Up Difficulty",
+      action: () => navigate("/interview-setup"),
+    }
+  }, [interviews, activeInterview, completedInterviews, navigate])
+
+  /* ============================================================
+     REAL PROGRESS MILESTONES (NO FAKE ACHIEVEMENTS)
+  ============================================================ */
+
+  const milestones = useMemo(() => {
+    const count = completedInterviews.length
+    const pAch = practiceStats?.achievements || []
+    const achMap = new Map(pAch.map((a) => [a.id, a]))
+
+    return [
+      {
+        id: "first",
+        title: "First Interview",
+        desc: "Complete your first interview",
+        unlocked: count >= 1,
+        progress: `${Math.min(count, 1)} / 1`,
+        icon: "★",
+      },
+      {
+        id: "first_solve",
+        title: "First Practice Solve",
+        desc: "Solve a problem in Question Practice",
+        unlocked: achMap.get("first_solve")?.unlocked || false,
+        progress: achMap.get("first_solve")?.progress || "0 / 1",
+        icon: "🎯",
+      },
+      {
+        id: "consistent",
+        title: "Consistent Practice",
+        desc: "Complete 5 mock sessions",
+        unlocked: count >= 5,
+        progress: `${Math.min(count, 5)} / 5`,
+        icon: "⚡",
+      },
+      {
+        id: "streak_3",
+        title: "Streak Initiate",
+        desc: "Maintain a 3-day practice streak",
+        unlocked: (practiceStats?.streak?.current_streak || 0) >= 3 || (practiceStats?.streak?.longest_streak || 0) >= 3,
+        progress: `${Math.min(practiceStats?.streak?.current_streak || 0, 3)} / 3 days`,
+        icon: "🔥",
+      },
+      {
+        id: "xp_100",
+        title: "Century Club",
+        desc: "Earn 100+ Practice XP points",
+        unlocked: (practiceStats?.xp?.total_xp || 0) >= 100,
+        progress: `${Math.min(practiceStats?.xp?.total_xp || 0, 100)} / 100 XP`,
+        icon: "⭐",
+      },
+      {
+        id: "score75",
+        title: "High Performer",
+        desc: "Score 75% or higher in mock interview",
+        unlocked: bestScore >= 75,
+        progress: bestScore ? `${Math.round(bestScore)}% / 75%` : "0 / 75%",
+        icon: "✦",
+      },
+      {
+        id: "master",
+        title: "Interview Pro",
+        desc: "Complete 10 mock sessions",
+        unlocked: count >= 10,
+        progress: `${Math.min(count, 10)} / 10`,
+        icon: "♛",
+      },
+    ]
+  }, [completedInterviews, bestScore, practiceStats])
+
+  /* ============================================================
+     NAVIGATION HELPERS
+  ============================================================ */
+
+  function formatDate(value: string | null | undefined) {
+    if (!value) return "—"
+    const date = new Date(value)
+    if (Number.isNaN(date.getTime())) return "—"
+    return date.toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    })
+  }
+
+  function formatStatus(status: string | null | undefined) {
+    if (!status) return "Unknown"
+    if (status.toLowerCase() === "completed") return "Completed"
+    if (status.toLowerCase() === "started") return "In Progress"
+    return "Ready"
   }
 
   function startInterview() {
+    setMobileMenu(false)
     navigate("/interview-setup")
   }
 
-  function openInterview(id: string) {
-    navigate(`/interview/${id}`)
+  function openResume() {
+    setMobileMenu(false)
+    navigate("/resume")
   }
 
-  function logout() {
-    localStorage.removeItem("access_token")
-    navigate("/login")
+  function openPerformance() {
+    setMobileMenu(false)
+    navigate("/performance")
   }
 
-  // ============================================================
-  // LOADING
-  // ============================================================
+  function openPractice() {
+    setMobileMenu(false)
+    navigate("/practice")
+  }
+
+  function openCoding() {
+    setMobileMenu(false)
+    navigate("/coding")
+  }
+
+  function openSettings() {
+    setProfileMenu(false)
+    setMobileMenu(false)
+    navigate("/settings")
+  }
+
+  function scrollToSection(id: string) {
+    setMobileMenu(false)
+    const element = document.getElementById(id)
+    if (element) {
+      element.scrollIntoView({ behavior: "smooth", block: "start" })
+    }
+  }
+
+  function handleSearchKeyDown(event: ReactKeyboardEvent<HTMLInputElement>) {
+    if (event.key === "Escape") {
+      setSearch("")
+      event.currentTarget.blur()
+    }
+  }
+
+  // Time-based personalized greeting
+  const greeting = useMemo(() => {
+    const hour = new Date().getHours()
+    if (hour < 12) return "Good morning"
+    if (hour < 17) return "Good afternoon"
+    return "Good evening"
+  }, [])
+
+  const displayName = user?.full_name?.trim() || user?.email?.split("@")[0] || "Candidate"
+  const firstName = displayName.split(" ")[0]
+  const avatarLetter = displayName.charAt(0).toUpperCase()
+
+  /* ============================================================
+     RENDER: SKELETON LOADING
+  ============================================================ */
 
   if (loading) {
     return (
-      <div className="dashboard-loading">
-        <div className="loader-orb" />
-
-        <span>
-          Loading your interview intelligence...
-        </span>
+      <div className="dashboard-shell">
+        <aside className="dashboard-sidebar">
+          <div className="sidebar-brand">
+            <div className="brand-logo"><span>AI</span></div>
+            <div className="brand-name">
+              <strong>AI Interview</strong>
+              <span>Platform</span>
+            </div>
+          </div>
+        </aside>
+        <main className="dashboard-main">
+          <div className="dashboard-loading-skeleton">
+            <div className="skeleton-welcome" />
+            <div className="skeleton-stats-grid">
+              <div className="skeleton-card" />
+              <div className="skeleton-card" />
+              <div className="skeleton-card" />
+              <div className="skeleton-card" />
+              <div className="skeleton-card" />
+              <div className="skeleton-card" />
+            </div>
+            <div className="skeleton-main-grid">
+              <div className="skeleton-panel" />
+              <div className="skeleton-panel" />
+            </div>
+          </div>
+        </main>
       </div>
     )
   }
 
-  // ============================================================
-  // UI
-  // ============================================================
+  /* ============================================================
+     MAIN DASHBOARD RENDER
+  ============================================================ */
 
   return (
     <div className="dashboard-shell">
-
-      {/* ======================================================
-          ULTRA ACTIVITY ANIMATION STYLES
-          ====================================================== */}
-
-      <style>{`
-
-        .ultra-activity {
-          position: relative;
-          overflow: hidden;
-          min-height: 330px;
-          padding: 26px;
-          border-radius: 20px;
-          border: 1px solid rgba(140, 90, 255, 0.22);
-          background:
-            radial-gradient(
-              circle at 85% 15%,
-              rgba(112, 62, 255, 0.18),
-              transparent 32%
-            ),
-            radial-gradient(
-              circle at 15% 90%,
-              rgba(24, 211, 255, 0.10),
-              transparent 30%
-            ),
-            linear-gradient(
-              135deg,
-              #0c1020,
-              #080b15
-            );
-          box-shadow:
-            0 25px 70px rgba(0,0,0,.28),
-            inset 0 1px 0 rgba(255,255,255,.045);
-          transition:
-            transform .45s ease,
-            border-color .45s ease,
-            box-shadow .45s ease;
-        }
-
-        .ultra-activity:hover {
-          transform: translateY(-6px);
-          border-color: rgba(148, 92, 255, .5);
-          box-shadow:
-            0 35px 90px rgba(79, 42, 190, .24),
-            inset 0 1px 0 rgba(255,255,255,.06);
-        }
-
-        .activity-grid {
-          position: absolute;
-          inset: 0;
-          pointer-events: none;
-          opacity: .22;
-          background-image:
-            linear-gradient(
-              rgba(140,100,255,.07) 1px,
-              transparent 1px
-            ),
-            linear-gradient(
-              90deg,
-              rgba(140,100,255,.07) 1px,
-              transparent 1px
-            );
-          background-size: 34px 34px;
-          animation: activityGridMove 12s linear infinite;
-          mask-image:
-            linear-gradient(
-              to bottom,
-              black,
-              transparent
-            );
-        }
-
-        @keyframes activityGridMove {
-          from {
-            transform: translateY(0);
-          }
-          to {
-            transform: translateY(34px);
-          }
-        }
-
-        .activity-orb {
-          position: absolute;
-          width: 190px;
-          height: 190px;
-          border-radius: 50%;
-          filter: blur(70px);
-          pointer-events: none;
-          opacity: .22;
-          animation: activityOrb 7s ease-in-out infinite;
-        }
-
-        .activity-orb.one {
-          top: -100px;
-          right: 20%;
-          background: #743cff;
-        }
-
-        .activity-orb.two {
-          bottom: -110px;
-          left: 18%;
-          background: #1bcfff;
-          animation-delay: -3s;
-        }
-
-        @keyframes activityOrb {
-          0%,100% {
-            transform: translate(0,0) scale(1);
-          }
-          50% {
-            transform: translate(35px,-20px) scale(1.16);
-          }
-        }
-
-        .activity-content {
-          position: relative;
-          z-index: 3;
-        }
-
-        .activity-top {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-        }
-
-        .activity-heading {
-          display: flex;
-          align-items: center;
-          gap: 13px;
-        }
-
-        .activity-icon {
-          width: 42px;
-          height: 42px;
-          display: grid;
-          place-items: center;
-          border-radius: 12px;
-          color: #ad82ff;
-          font-size: 18px;
-          background: rgba(122,73,255,.12);
-          border: 1px solid rgba(140,85,255,.25);
-          box-shadow:
-            0 0 0 rgba(128,70,255,0);
-          animation: activityIconPulse 2.5s ease-in-out infinite;
-        }
-
-        @keyframes activityIconPulse {
-          50% {
-            box-shadow:
-              0 0 30px rgba(126,70,255,.28);
-          }
-        }
-
-        .activity-heading small {
-          display: block;
-          color: #6d7183;
-          font-size: 8px;
-          font-weight: 800;
-          letter-spacing: .16em;
-        }
-
-        .activity-heading h2 {
-          margin: 5px 0 0;
-          color: #f0f1f7;
-          font-size: 18px;
-          font-weight: 650;
-        }
-
-        .activity-live {
-          display: flex;
-          align-items: center;
-          gap: 7px;
-          padding: 6px 10px;
-          border-radius: 8px;
-          color: #45e88d;
-          font-size: 8px;
-          font-weight: 850;
-          letter-spacing: .13em;
-          background: rgba(38,220,130,.07);
-        }
-
-        .activity-live-dot {
-          width: 6px;
-          height: 6px;
-          border-radius: 50%;
-          background: #42e98a;
-          box-shadow: 0 0 12px #42e98a;
-          animation: liveDot 1.4s ease-in-out infinite;
-        }
-
-        @keyframes liveDot {
-          50% {
-            transform: scale(.55);
-            opacity: .35;
-          }
-        }
-
-        .activity-main {
-          display: grid;
-          grid-template-columns: 220px 1fr;
-          align-items: center;
-          gap: 30px;
-          margin-top: 28px;
-        }
-
-        .activity-label {
-          color: #666d7d;
-          font-size: 8px;
-          font-weight: 800;
-          letter-spacing: .14em;
-        }
-
-        .activity-number {
-          display: block;
-          margin-top: 5px;
-          color: #fff;
-          font-size: 60px;
-          line-height: .95;
-          letter-spacing: -.07em;
-          background:
-            linear-gradient(
-              120deg,
-              #fff,
-              #a87aff
-            );
-          -webkit-background-clip: text;
-          -webkit-text-fill-color: transparent;
-          animation: numberGlow 3s ease-in-out infinite;
-        }
-
-        @keyframes numberGlow {
-          50% {
-            filter: drop-shadow(
-              0 0 14px rgba(150,100,255,.3)
-            );
-          }
-        }
-
-        .activity-subtitle {
-          margin: 8px 0 0;
-          color: #656d7b;
-          font-size: 10px;
-        }
-
-        .activity-wave {
-          position: relative;
-          height: 135px;
-          border-bottom:
-            1px solid rgba(255,255,255,.06);
-        }
-
-        .activity-wave svg {
-          width: 100%;
-          height: 100%;
-          overflow: visible;
-        }
-
-        .activity-wave-line {
-          fill: none;
-          stroke: url(#activityWaveGradient);
-          stroke-width: 3;
-          stroke-linecap: round;
-          stroke-linejoin: round;
-          stroke-dasharray: 900;
-          stroke-dashoffset: 900;
-          animation:
-            drawActivityWave 2.6s ease forwards,
-            waveFloat 5s ease-in-out 2.6s infinite;
-        }
-
-        .activity-wave-glow {
-          fill: none;
-          stroke: url(#activityWaveGradient);
-          stroke-width: 9;
-          stroke-linecap: round;
-          opacity: .17;
-          filter: blur(3px);
-        }
-
-        @keyframes drawActivityWave {
-          to {
-            stroke-dashoffset: 0;
-          }
-        }
-
-        @keyframes waveFloat {
-          50% {
-            transform: translateY(-5px);
-          }
-        }
-
-        .activity-pulse {
-          position: absolute;
-          width: 8px;
-          height: 8px;
-          border-radius: 50%;
-          background: #a878ff;
-          box-shadow:
-            0 0 18px rgba(168,120,255,.95);
-          animation:
-            activityPulse 2s ease-in-out infinite;
-        }
-
-        .activity-pulse.p1 {
-          left: 31%;
-          top: 34%;
-        }
-
-        .activity-pulse.p2 {
-          left: 68%;
-          top: 31%;
-          animation-delay: .6s;
-        }
-
-        .activity-pulse.p3 {
-          right: 4%;
-          top: 48%;
-          animation-delay: 1.1s;
-        }
-
-        @keyframes activityPulse {
-          0%,100% {
-            transform: scale(.65);
-            opacity: .5;
-          }
-          50% {
-            transform: scale(1.4);
-            opacity: 1;
-          }
-        }
-
-        .activity-stats {
-          display: grid;
-          grid-template-columns:
-            repeat(4,1fr);
-          margin-top: 24px;
-          padding-top: 19px;
-          border-top:
-            1px solid rgba(255,255,255,.06);
-        }
-
-        .activity-stat {
-          padding: 0 18px;
-          border-right:
-            1px solid rgba(255,255,255,.06);
-        }
-
-        .activity-stat:first-child {
-          padding-left: 0;
-        }
-
-        .activity-stat:last-child {
-          border-right: 0;
-        }
-
-        .activity-stat-label {
-          color: #606979;
-          font-size: 8px;
-          font-weight: 800;
-          letter-spacing: .12em;
-        }
-
-        .activity-stat-value {
-          display: block;
-          margin-top: 6px;
-          color: #e8eaf0;
-          font-size: 18px;
-          font-weight: 700;
-        }
-
-        .activity-stat-sub {
-          display: block;
-          margin-top: 3px;
-          color: #59616f;
-          font-size: 9px;
-        }
-
-        .activity-stat-live {
-          color: #42df88;
-        }
-
-        .activity-footer {
-          display: flex;
-          align-items: center;
-          gap: 10px;
-          margin-top: 20px;
-          color: #464d5b;
-          font-size: 7px;
-          font-weight: 800;
-          letter-spacing: .14em;
-        }
-
-        .activity-bars {
-          display: flex;
-          align-items: center;
-          gap: 3px;
-          height: 14px;
-        }
-
-        .activity-bars span {
-          width: 2px;
-          border-radius: 2px;
-          background: #7551df;
-          animation: activityBars 1s ease-in-out infinite;
-        }
-
-        .activity-bars span:nth-child(1) {
-          height: 5px;
-        }
-
-        .activity-bars span:nth-child(2) {
-          height: 10px;
-          animation-delay: .15s;
-        }
-
-        .activity-bars span:nth-child(3) {
-          height: 14px;
-          animation-delay: .3s;
-        }
-
-        .activity-bars span:nth-child(4) {
-          height: 8px;
-          animation-delay: .45s;
-        }
-
-        .activity-bars span:nth-child(5) {
-          height: 12px;
-          animation-delay: .6s;
-        }
-
-        .activity-bars span:nth-child(6) {
-          height: 6px;
-          animation-delay: .75s;
-        }
-
-        .activity-bars span:nth-child(7) {
-          height: 11px;
-          animation-delay: .9s;
-        }
-
-        @keyframes activityBars {
-          50% {
-            transform: scaleY(.45);
-            opacity: .45;
-          }
-        }
-
-        @media (max-width: 900px) {
-          .activity-main {
-            grid-template-columns: 1fr;
-            gap: 18px;
-          }
-
-          .activity-number {
-            font-size: 46px;
-          }
-        }
-
-        @media (max-width: 650px) {
-          .ultra-activity {
-            padding: 20px;
-          }
-
-          .activity-live {
-            display: none;
-          }
-
-          .activity-stats {
-            grid-template-columns: 1fr 1fr;
-            gap: 18px;
-          }
-
-          .activity-stat {
-            padding: 0;
-            border-right: 0;
-          }
-        }
-
-      `}</style>
-
       {/* ======================================================
           SIDEBAR
-          ====================================================== */}
-
-      <aside
-        className={`dashboard-sidebar ${
-          mobileMenu ? "mobile-open" : ""
-        }`}
-      >
-
+      ====================================================== */}
+      <aside className={`dashboard-sidebar ${mobileMenu ? "mobile-open" : ""}`}>
         <div className="sidebar-brand">
-
           <div className="brand-logo">
             <span>AI</span>
           </div>
-
           <div className="brand-name">
             <strong>AI Interview</strong>
             <span>Platform</span>
           </div>
-
           <button
+            type="button"
             className="collapse-button"
-            onClick={() =>
-              setMobileMenu(false)
-            }
+            onClick={() => setMobileMenu(false)}
           >
             ‹
           </button>
-
         </div>
-
 
         <nav className="sidebar-menu">
-
-          <button className="sidebar-link active">
-            <span className="nav-icon">
-              ▦
-            </span>
-            <span>
-              Dashboard
-            </span>
-          </button>
-
-
           <button
-            className="sidebar-link"
-            onClick={() =>
-              navigate("/resume")
-            }
+            type="button"
+            className="sidebar-link active"
+            onClick={() => setMobileMenu(false)}
           >
-            <span className="nav-icon">
-              ▤
-            </span>
-
-            <span>
-              Resume Analyzer
-            </span>
+            <span className="nav-icon">▦</span>
+            <span>Dashboard</span>
           </button>
 
+          <button
+            type="button"
+            className="sidebar-link"
+            onClick={openResume}
+          >
+            <span className="nav-icon">▤</span>
+            <span>Resume Analyzer</span>
+          </button>
 
           <button
+            type="button"
             className="sidebar-link"
             onClick={startInterview}
           >
-            <span className="nav-icon">
-              ♙
-            </span>
-
-            <span>
-              AI Interview
-            </span>
-
-            <span className="nav-chevron">
-              ⌄
-            </span>
+            <span className="nav-icon">♙</span>
+            <span>AI Interview</span>
           </button>
-
 
           <button
+            type="button"
             className="sidebar-link"
-            onClick={startInterview}
+            onClick={openPerformance}
           >
-            <span className="nav-icon">
-              &lt;/&gt;
-            </span>
-
-            <span>
-              Coding Interview
-            </span>
+            <span className="nav-icon">▥</span>
+            <span>Performance</span>
           </button>
-
 
           <button
+            type="button"
             className="sidebar-link"
-            onClick={startInterview}
+            onClick={openPractice}
           >
-            <span className="nav-icon">
-              ▣
-            </span>
-
-            <span>
-              Mock Interviews
-            </span>
+            <span className="nav-icon">✎</span>
+            <span>Question Practice</span>
           </button>
 
-
-          <button className="sidebar-link">
-            <span className="nav-icon">
-              ▥
-            </span>
-
-            <span>
-              Performance
-            </span>
+          <button
+            type="button"
+            className="sidebar-link"
+            onClick={openCoding}
+          >
+            <span className="nav-icon">⌨</span>
+            <span>Coding Arena</span>
           </button>
 
-
-          <button className="sidebar-link">
-            <span className="nav-icon">
-              ▢
-            </span>
-
-            <span>
-              Learning Roadmap
-            </span>
+          <button
+            type="button"
+            className="sidebar-link"
+            onClick={() => scrollToSection("analytics-section")}
+          >
+            <span className="nav-icon">◉</span>
+            <span>Analytics</span>
           </button>
 
-
-          <button className="sidebar-link">
-            <span className="nav-icon">
-              ?
-            </span>
-
-            <span>
-              Question Bank
-            </span>
+          <button
+            type="button"
+            className="sidebar-link"
+            onClick={() => scrollToSection("recent-section")}
+          >
+            <span className="nav-icon">⌁</span>
+            <span>Recent Sessions</span>
           </button>
 
-
-          <button className="sidebar-link">
-            <span className="nav-icon">
-              ⌁
-            </span>
-
-            <span>
-              Progress
-            </span>
+          <button
+            type="button"
+            className="sidebar-link"
+            onClick={() => {
+              setMobileMenu(false)
+              navigate("/achievements")
+            }}
+          >
+            <span className="nav-icon">🏆</span>
+            <span>Achievements</span>
           </button>
 
-
-          <button className="sidebar-link">
-            <span className="nav-icon">
-              ◉
-            </span>
-
-            <span>
-              Analytics
-            </span>
+          <button
+            type="button"
+            className="sidebar-link"
+            onClick={() => {
+              setMobileMenu(false)
+              navigate("/notifications")
+            }}
+          >
+            <span className="nav-icon">🔔</span>
+            <span>Notifications</span>
+            {dashboardUnreadCount > 0 && (
+              <span className="notification-badge" style={{ marginLeft: "auto", position: "static" }}>
+                {dashboardUnreadCount > 99 ? "99+" : dashboardUnreadCount}
+              </span>
+            )}
           </button>
 
-
-          <button className="sidebar-link">
-            <span className="nav-icon">
-              ⚙
-            </span>
-
-            <span>
-              Settings
-            </span>
+          <button
+            type="button"
+            className="sidebar-link"
+            onClick={() => scrollToSection("milestones-section")}
+          >
+            <span className="nav-icon">★</span>
+            <span>Milestones</span>
           </button>
 
+          <button
+            type="button"
+            className="sidebar-link"
+            onClick={() => {
+              setMobileMenu(false)
+              navigate("/profile")
+            }}
+          >
+            <span className="nav-icon">👤</span>
+            <span>Profile</span>
+          </button>
+
+          <button
+            type="button"
+            className="sidebar-link"
+            onClick={() => {
+              setMobileMenu(false)
+              navigate("/subscription")
+            }}
+          >
+            <span className="nav-icon">💎</span>
+            <span>Subscription</span>
+          </button>
+
+          <button
+            type="button"
+            className="sidebar-link"
+            onClick={() => {
+              setMobileMenu(false)
+              navigate("/support")
+            }}
+          >
+            <span className="nav-icon">🎧</span>
+            <span>Help & Support</span>
+          </button>
+
+          <button
+            type="button"
+            className="sidebar-link"
+            onClick={openSettings}
+          >
+            <span className="nav-icon">⚙</span>
+            <span>Settings</span>
+          </button>
         </nav>
 
-
-        {/* PRACTICE CARD */}
-
+        {/* PRACTICE QUICK-LAUNCH CARD */}
         <div className="practice-card">
-
-          <div className="practice-stars">
-            ✦
-          </div>
-
-          <div className="practice-trophy">
-            ♛
-          </div>
-
-          <h3>
-            Keep Practicing!
-          </h3>
-
+          <div className="practice-trophy">🎯</div>
+          <h3>Ready to Practice?</h3>
           <p>
-            You are on the right track.
-            Practice more to achieve your goals.
+            Sharpen your technical & behavioral skills with realistic AI interviewers.
           </p>
-
-          <button onClick={startInterview}>
-            View Roadmap
-            <span>→</span>
+          <button type="button" onClick={startInterview}>
+            Start Interview <span>→</span>
           </button>
-
         </div>
-
       </aside>
 
-
       {/* ======================================================
-          MAIN
-          ====================================================== */}
-
+          MAIN WORKSPACE
+      ====================================================== */}
       <main className="dashboard-main">
-
-        {/* TOP BAR */}
-
+        {/* HEADER */}
         <header className="dashboard-header">
-
           <button
+            type="button"
             className="mobile-menu-button"
-            onClick={() =>
-              setMobileMenu(!mobileMenu)
-            }
+            onClick={() => setMobileMenu((value) => !value)}
+            aria-label="Open navigation menu"
           >
             ☰
           </button>
 
-
+          {/* SEARCH */}
           <div className="search-container">
-
-            <span className="search-icon">
-              ⌕
-            </span>
-
+            <span className="search-icon">⌕</span>
             <input
-              placeholder="Search anything..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              onKeyDown={handleSearchKeyDown}
+              placeholder="Search by role or difficulty..."
+              aria-label="Search interviews"
             />
-
-            <kbd>
-              ⌘ K
-            </kbd>
-
+            {search && (
+              <button
+                type="button"
+                className="search-clear"
+                onClick={() => setSearch("")}
+              >
+                ×
+              </button>
+            )}
+            <kbd>Esc</kbd>
           </div>
-
 
           <div className="header-right">
+            <RealtimeStatusBadge />
 
-            <button className="notification">
-              ♧
-
-              <span>
-                {Math.min(
-                  interviews.length,
-                  9,
-                )}
-              </span>
-            </button>
-
-
-            <div className="header-profile">
-
-              <div className="profile-avatar">
-                {user?.full_name
-                  ?.charAt(0)
-                  .toUpperCase() ||
-                  "G"}
-              </div>
-
-
-              <div className="profile-details">
-
-                <strong>
-                  {user?.full_name ||
-                    "Gourab"}
-                </strong>
-
-                <span>
-                  Premium Plan
-                </span>
-
-              </div>
-
-
+            {/* NOTIFICATIONS */}
+            <div className="notification-wrapper" ref={notificationRef}>
               <button
-                className="profile-dropdown"
-                onClick={logout}
-                title="Logout"
+                type="button"
+                className="notification"
+                onClick={() => setNotificationMenu((val) => !val)}
+                aria-label="Notifications"
               >
-                ⌄
+                🔔
+                {dashboardUnreadCount > 0 && (
+                  <span className="notification-badge">
+                    {dashboardUnreadCount > 9 ? "9+" : dashboardUnreadCount}
+                  </span>
+                )}
               </button>
 
+              {notificationMenu && (
+                <div className="notification-dropdown">
+                  <div className="dropdown-title-row">
+                    <span className="dropdown-title">Notifications</span>
+                    {dashboardUnreadCount > 0 && (
+                      <button
+                        type="button"
+                        className="dropdown-mark-read"
+                        onClick={async () => {
+                          setDashboardUnreadCount(0)
+                          setDashboardNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })))
+                          await markAllNotificationsAsRead().catch(() => null)
+                        }}
+                      >
+                        Mark all read
+                      </button>
+                    )}
+                  </div>
+
+                  {dashboardNotifications.length === 0 ? (
+                    <div className="dropdown-empty">
+                      You&apos;re all caught up. No notifications yet.
+                    </div>
+                  ) : (
+                    <div className="dropdown-scroll-list">
+                      {dashboardNotifications.map((n) => (
+                        <div
+                          key={n.id}
+                          className={`dropdown-item ${!n.is_read ? "unread" : ""}`}
+                          onClick={async () => {
+                            if (!n.is_read) {
+                              setDashboardUnreadCount((prev) => Math.max(0, prev - 1))
+                              setDashboardNotifications((prev) =>
+                                prev.map((item) => (item.id === n.id ? { ...item, is_read: true } : item))
+                              )
+                              await markNotificationAsRead(n.id).catch(() => null)
+                            }
+                            setNotificationMenu(false)
+                            if (n.action_url) {
+                              navigate(n.action_url)
+                            } else {
+                              navigate("/notifications")
+                            }
+                          }}
+                        >
+                          <div className="dropdown-item-header">
+                            <span className="dropdown-icon">{n.icon || "🔔"}</span>
+                            <strong>{n.title}</strong>
+                            {!n.is_read && <span className="dropdown-unread-dot" />}
+                          </div>
+                          <span>{n.message}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  <div className="dropdown-footer">
+                    <button
+                      type="button"
+                      className="view-all-notifs-btn"
+                      onClick={() => {
+                        setNotificationMenu(false)
+                        navigate("/notifications")
+                      }}
+                    >
+                      View All Notifications →
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
 
-          </div>
+            {/* PROFILE DROPDOWN */}
+            <div className="header-profile-wrapper" ref={profileRef}>
+              <button
+                type="button"
+                className="header-profile"
+                onClick={() => setProfileMenu((val) => !val)}
+                aria-expanded={profileMenu}
+              >
+                <div className="profile-avatar">{avatarLetter}</div>
+                <div className="profile-details">
+                  <div className="profile-name-row">
+                    <strong>{displayName}</strong>
+                    {practiceStats?.xp && (
+                      <span className="user-level-badge">
+                        Lvl {practiceStats.xp.level}
+                      </span>
+                    )}
+                  </div>
+                  <span>{practiceStats?.xp ? `${practiceStats.xp.total_xp} XP • ${practiceStats.xp.level_title}` : (user?.email || "Candidate")}</span>
+                </div>
+                <span className="profile-dropdown">{profileMenu ? "⌃" : "⌄"}</span>
+              </button>
 
+              {profileMenu && (
+                <div className="profile-menu">
+                  {practiceStats?.xp && (
+                    <div className="profile-xp-summary">
+                      <div className="profile-xp-row">
+                        <span className="xp-rank">{practiceStats.xp.level_title}</span>
+                        <span className="xp-pts">{practiceStats.xp.total_xp} XP</span>
+                      </div>
+                      <div className="profile-xp-track">
+                        <div
+                          className="profile-xp-fill"
+                          style={{ width: `${practiceStats.xp.progress_pct}%` }}
+                        />
+                      </div>
+                      <small className="xp-next">
+                        {practiceStats.xp.current_level_xp} / {practiceStats.xp.next_level_xp} XP to Lvl {practiceStats.xp.level + 1}
+                      </small>
+                    </div>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setProfileMenu(false)
+                      navigate("/profile")
+                    }}
+                  >
+                    <span>👤</span> View Profile
+                  </button>
+                  <button type="button" onClick={openPractice}>
+                    <span>✎</span> Practice Questions
+                  </button>
+                  <button type="button" onClick={openSettings}>
+                    <span>⚙</span> Settings
+                  </button>
+                  <button type="button" onClick={openResume}>
+                    <span>▤</span> Resume Analyzer
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setProfileMenu(false)
+                      navigate("/support")
+                    }}
+                  >
+                    <span>🎧</span> Help & Support
+                  </button>
+                  <div className="profile-divider" />
+                  <button
+                    type="button"
+                    className="logout-menu-button"
+                    onClick={logout}
+                  >
+                    <span>⇥</span> Logout
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
         </header>
 
-
-        {/* ======================================================
-            CONTENT
-            ====================================================== */}
-
+        {/* CONTENT */}
         <div className="dashboard-content">
+          {/* ERROR BANNER */}
+          {error && (
+            <div className="dashboard-error">
+              <span>⚠️ {error}</span>
+              <button type="button" onClick={loadDashboard}>
+                Retry
+              </button>
+            </div>
+          )}
 
-          {/* WELCOME */}
-
-          <section className="welcome">
-
-            <h1>
-              Welcome back,{" "}
-              {user?.full_name ||
-                "Gourab"}!{" "}
-              <span>
-                👋
-              </span>
-            </h1>
-
-            <p>
-              Ready to ace your next interview?
-              Let's continue your preparation journey.
-            </p>
-
-          </section>
-
-
-          {/* ====================================================
-              STAT CARDS
-              ==================================================== */}
-
-          <section className="stats-row">
-
-            <div className="stat-card purple-card">
-
-              <div className="stat-icon">
-                ♙
-              </div>
-
-              <div>
-
-                <span>
-                  Interviews Taken
-                </span>
-
-                <strong>
-                  {interviews.length}
-                </strong>
-
-                <small>
-                  ↑ Total interviews
-                </small>
-
-              </div>
-
+          {/* ==================================================
+              A. WELCOME SECTION
+          ================================================== */}
+          <section className="welcome-banner">
+            <div className="welcome-copy">
+              <span className="welcome-eyebrow">CANDIDATE DASHBOARD</span>
+              <h1>
+                {greeting}, {firstName}! <span>👋</span>
+              </h1>
+              <p>
+                {completedInterviews.length > 0
+                  ? `You have completed ${completedInterviews.length} mock interview${
+                      completedInterviews.length === 1 ? "" : "s"
+                    } with an overall average score of ${Math.round(averageScore)}%.`
+                  : activeInterview
+                  ? "You have an ongoing interview session waiting to be completed."
+                  : "Welcome to your AI Interview Platform. Start a session to benchmark your technical preparation."}
+              </p>
             </div>
 
+            <div className="welcome-actions">
+              <button
+                type="button"
+                className="welcome-primary-cta"
+                onClick={startInterview}
+              >
+                <span>Start AI Interview</span>
+                <span className="cta-arrow">→</span>
+              </button>
+
+              <button
+                type="button"
+                className="welcome-secondary-cta"
+                onClick={openResume}
+              >
+                Analyze Resume
+              </button>
+            </div>
+          </section>
+
+          {/* ==================================================
+              B. QUICK STATS (100% REAL DATA)
+          ================================================== */}
+          <section className="stats-row">
+            <div className="stat-card purple-card">
+              <div className="stat-icon">♙</div>
+              <div className="stat-info">
+                <span>Total Interviews</span>
+                <strong>{interviews.length}</strong>
+                <small>Sessions created</small>
+              </div>
+            </div>
 
             <div className="stat-card blue-card">
-
-              <div className="stat-icon">
-                ◎
+              <div className="stat-icon">✓</div>
+              <div className="stat-info">
+                <span>Completed</span>
+                <strong>{completedInterviews.length}</strong>
+                <small>Evaluated sessions</small>
               </div>
-
-              <div>
-
-                <span>
-                  Average Score
-                </span>
-
-                <strong>
-                  {averageScore.toFixed(1)}%
-                </strong>
-
-                <small>
-                  ↑ Based on completed
-                </small>
-
-              </div>
-
             </div>
-
 
             <div className="stat-card cyan-card">
-
-              <div className="stat-icon">
-                &lt;/&gt;
-              </div>
-
-              <div>
-
-                <span>
-                  Coding Score
-                </span>
-
+              <div className="stat-icon">◎</div>
+              <div className="stat-info">
+                <span>Average Score</span>
                 <strong>
-                  {completedInterviews.length
-                    ? `${averageScore.toFixed(1)}%`
-                    : "—"}
+                  {scores.length ? `${Math.round(averageScore)}%` : "—"}
                 </strong>
-
-                <small>
-                  Interview performance
-                </small>
-
+                <small>{scores.length ? "Across completed" : "No scores yet"}</small>
               </div>
-
             </div>
 
+            <div className="stat-card gold-card">
+              <div className="stat-icon">★</div>
+              <div className="stat-info">
+                <span>Best Score</span>
+                <strong>
+                  {scores.length ? `${Math.round(bestScore)}%` : "—"}
+                </strong>
+                <small>{scores.length ? "Personal record" : "Pending completion"}</small>
+              </div>
+            </div>
 
             <div className="stat-card orange-card">
-
-              <div className="stat-icon">
-                ♟
+              <div className="stat-icon">&lt;/&gt;</div>
+              <div className="stat-info">
+                <span>Questions Attempted</span>
+                <strong>{totalQuestionsAttempted}</strong>
+                <small>Technical & soft skill</small>
               </div>
-
-              <div>
-
-                <span>
-                  HR Score
-                </span>
-
-                <strong>
-                  {completedInterviews.length
-                    ? `${Math.min(
-                        averageScore + 3,
-                        100,
-                      ).toFixed(1)}%`
-                    : "—"}
-                </strong>
-
-                <small>
-                  Communication estimate
-                </small>
-
-              </div>
-
             </div>
-
 
             <div className="stat-card pink-card">
-
-              <div className="stat-icon">
-                ◷
-              </div>
-
-              <div>
-
-                <span>
-                  Total Practice Time
-                </span>
-
-                <strong>
-                  {completedInterviews.length
-                    ? `${completedInterviews.length}h`
-                    : "—"}
-                </strong>
-
+              <div className="stat-icon">🔥</div>
+              <div className="stat-info">
+                <span>Practice Streak</span>
+                <strong>{effectiveStreak} Day{effectiveStreak === 1 ? "" : "s"}</strong>
                 <small>
-                  Based on completed sessions
+                  {practiceStats?.streak?.is_active_today
+                    ? "Active today • Consistent"
+                    : effectiveStreak > 0
+                    ? "Streak active from yesterday"
+                    : "Solve a question to begin"}
                 </small>
-
               </div>
-
             </div>
-
           </section>
 
-
-          {/* ====================================================
-              FIRST GRID
-              ==================================================== */}
-
-          <section className="main-grid">
-
-            {/* PERFORMANCE */}
-
-            <div className="panel performance-panel">
-
+          {/* ==================================================
+              C & H. UPCOMING / ACTIVE + AI RECOMMENDATION
+          ================================================== */}
+          <section className="two-column-action-grid">
+            {/* C. UPCOMING / ACTIVE INTERVIEW */}
+            <div className="panel action-panel">
               <div className="panel-header">
-
                 <div>
-
-                  <h2>
-                    Performance Overview
-                  </h2>
-
-                  <p>
-                    Your interview score trajectory
-                  </p>
-
+                  <span className="panel-badge">CURRENT SESSION</span>
+                  <h2>Active Interview Session</h2>
                 </div>
-
-                <button className="small-select">
-                  Last 7 Days
-                  <span>
-                    ⌄
-                  </span>
-                </button>
-
               </div>
 
-
-              <div className="chart-wrapper">
-
-                <div className="chart-y-axis">
-
-                  <span>100</span>
-                  <span>75</span>
-                  <span>50</span>
-                  <span>25</span>
-                  <span>0</span>
-
-                </div>
-
-
-                <div className="chart-area">
-
-                  <div className="chart-lines">
-                    <i />
-                    <i />
-                    <i />
-                    <i />
-                    <i />
-                    <i />
+              {activeInterview ? (
+                <div className="active-interview-card">
+                  <div className="active-card-top">
+                    <div className="active-role-icon">&lt;/&gt;</div>
+                    <div className="active-card-title">
+                      <strong>{activeInterview.job_role || "Technical Interview"}</strong>
+                      <span>
+                        {activeInterview.difficulty?.toUpperCase()} • Created{" "}
+                        {formatDate(activeInterview.created_at)}
+                      </span>
+                    </div>
+                    <span className="live-status-pill">
+                      <span className="pulsing-dot" />
+                      {activeInterview.status === "started" ? "IN PROGRESS" : "READY"}
+                    </span>
                   </div>
 
-
-                  <svg
-                    viewBox="0 0 450 150"
-                    preserveAspectRatio="none"
-                    className="performance-svg"
-                  >
-
-                    <defs>
-
-                      <linearGradient
-                        id="chartGradient"
-                        x1="0"
-                        y1="0"
-                        x2="0"
-                        y2="1"
-                      >
-
-                        <stop
-                          offset="0%"
-                          stopColor="#9d4edd"
-                          stopOpacity="0.42"
-                        />
-
-                        <stop
-                          offset="100%"
-                          stopColor="#5b21b6"
-                          stopOpacity="0"
-                        />
-
-                      </linearGradient>
-
-                    </defs>
-
-
-                    <polygon
-                      points={`0,150 ${graphPoints} 450,150`}
-                      fill="url(#chartGradient)"
-                    />
-
-
-                    <polyline
-                      points={graphPoints}
-                      fill="none"
-                      stroke="#a855f7"
-                      strokeWidth="3"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-
-
-                    {performanceInterviews.map(
-                      (item, index) => {
-
-                        const x =
-                          performanceInterviews.length === 1
-                            ? 225
-                            : (index /
-                                (performanceInterviews.length -
-                                  1)) *
-                              450
-
-                        const y =
-                          150 -
-                          (item.score ?? 0) *
-                            1.25
-
-                        return (
-                          <circle
-                            key={item.id}
-                            cx={x}
-                            cy={Math.max(5, y)}
-                            r="4"
-                            fill="#9d4edd"
-                            stroke="#fff"
-                            strokeWidth="2"
-                          />
-                        )
-                      },
-                    )}
-
-                  </svg>
-
-
-                  <div className="chart-x-axis">
-
-                    {performanceInterviews.length
-                      ? performanceInterviews.map(
-                          (item) => (
-                            <span
-                              key={item.id}
-                            >
-                              {new Date(
-                                item.created_at,
-                              ).toLocaleDateString(
-                                "en-IN",
-                                {
-                                  month: "short",
-                                  day: "numeric",
-                                },
-                              )}
-                            </span>
-                          ),
-                        )
-                      : (
-                        <>
-                          <span>
-                            Start
-                          </span>
-
-                          <span>
-                            Practice
-                          </span>
-
-                          <span>
-                            Improve
-                          </span>
-
-                          <span>
-                            Master
-                          </span>
-                        </>
-                      )}
-
-                  </div>
-
-                </div>
-
-              </div>
-
-            </div>
-
-
-            {/* RADAR */}
-
-            <div className="panel radar-panel">
-
-              <div className="panel-header">
-
-                <div>
-
-                  <h2>
-                    Skill Radar
-                  </h2>
-
-                  <p>
-                    Your current skill profile
-                  </p>
-
-                </div>
-
-              </div>
-
-
-              <div className="radar-wrapper">
-
-                <svg
-                  viewBox="0 0 300 250"
-                  className="radar-svg"
-                >
-
-                  <polygon
-                    points="150,25 270,95 225,225 75,225 30,95"
-                    fill="none"
-                    stroke="#29334d"
-                  />
-
-                  <polygon
-                    points="150,55 235,105 205,190 95,190 65,105"
-                    fill="none"
-                    stroke="#29334d"
-                  />
-
-                  <polygon
-                    points="150,85 200,115 185,155 115,155 100,115"
-                    fill="none"
-                    stroke="#29334d"
-                  />
-
-                  <line
-                    x1="150"
-                    y1="25"
-                    x2="150"
-                    y2="225"
-                    stroke="#29334d"
-                  />
-
-                  <line
-                    x1="30"
-                    y1="95"
-                    x2="225"
-                    y2="225"
-                    stroke="#29334d"
-                  />
-
-                  <line
-                    x1="270"
-                    y1="95"
-                    x2="75"
-                    y2="225"
-                    stroke="#29334d"
-                  />
-
-                  <polygon
-                    points={`
-                      150,${225 - skills[0].value * 2}
-                      ${150 + skills[1].value * 1.2},${95 + (100 - skills[1].value) * 0.25}
-                      ${225 - (100 - skills[2].value) * 0.35},${225 - skills[2].value * 0.15}
-                      150,${225 - skills[3].value * 1.1}
-                      ${75 + (100 - skills[4].value) * 0.35},${225 - skills[4].value * 0.15}
-                      ${30 + skills[5].value * 1.2},${95 + (100 - skills[5].value) * 0.25}
-                    `}
-                    fill="#8b5cf6"
-                    fillOpacity="0.35"
-                    stroke="#b14cff"
-                    strokeWidth="2"
-                  />
-
-                </svg>
-
-
-                <span className="radar-text radar-top">
-                  DSA
-                </span>
-
-                <span className="radar-text radar-right-top">
-                  System Design
-                </span>
-
-                <span className="radar-text radar-right-bottom">
-                  DBMS
-                </span>
-
-                <span className="radar-text radar-bottom">
-                  HR
-                </span>
-
-                <span className="radar-text radar-left-bottom">
-                  OS
-                </span>
-
-                <span className="radar-text radar-left-top">
-                  CN
-                </span>
-
-              </div>
-
-            </div>
-
-
-            {/* UPCOMING INTERVIEW */}
-
-            <div className="panel upcoming-panel">
-
-              <div className="panel-header">
-
-                <div>
-
-                  <h2>
-                    Upcoming Interview
-                  </h2>
-
-                </div>
-
-                <button
-                  onClick={startInterview}
-                >
-                  View All
-                </button>
-
-              </div>
-
-
-              <div className="upcoming-box">
-
-                <div className="company-logo microsoft">
-                  <span />
-                  <span />
-                  <span />
-                  <span />
-                </div>
-
-
-                <div className="upcoming-company">
-
-                  <strong>
-                    AI Mock Interview
-                  </strong>
-
-                  <span>
-                    {activeInterviews.length
-                      ? `${activeInterviews[0].job_role} • ${activeInterviews[0].difficulty}`
-                      : interviews.length
-                        ? `${interviews[0].job_role} • ${interviews[0].difficulty}`
-                        : "Ready for your next challenge"}
-                  </span>
-
-                </div>
-
-
-                <div className="upcoming-meta">
-
-                  <span>
-                    ▣ Flexible
-                  </span>
-
-                  <span>
-                    ◷ AI Powered
-                  </span>
-
-                </div>
-
-
-                <button
-                  className="start-button"
-                  onClick={startInterview}
-                >
-                  Start Interview
-                  <span>
-                    →
-                  </span>
-                </button>
-
-              </div>
-
-            </div>
-
-          </section>
-
-
-          {/* ====================================================
-              ULTRA ANIMATED INTERVIEW ACTIVITY
-              ==================================================== */}
-
-          <section className="ultra-activity">
-
-            <div className="activity-grid" />
-
-            <div className="activity-orb one" />
-            <div className="activity-orb two" />
-
-
-            <div className="activity-content">
-
-              {/* HEADER */}
-
-              <div className="activity-top">
-
-                <div className="activity-heading">
-
-                  <div className="activity-icon">
-                    ◉
-                  </div>
-
-                  <div>
-
-                    <small>
-                      INTERVIEW ACTIVITY
-                    </small>
-
-                    <h2>
-                      Your latest interview activity
-                    </h2>
-
-                  </div>
-
-                </div>
-
-
-                <div className="activity-live">
-
-                  <i className="activity-live-dot" />
-
-                  LIVE
-
-                </div>
-
-              </div>
-
-
-              {/* MAIN */}
-
-              <div className="activity-main">
-
-                <div>
-
-                  <span className="activity-label">
-                    INTERVIEWS COMPLETED
-                  </span>
-
-                  <strong className="activity-number">
-                    {completedInterviews.length}
-                  </strong>
-
-                  <p className="activity-subtitle">
-                    AI mock interviews completed
-                  </p>
-
-                </div>
-
-
-                {/* WAVE */}
-
-                <div className="activity-wave">
-
-                  <svg
-                    viewBox="0 0 600 150"
-                    preserveAspectRatio="none"
-                  >
-
-                    <defs>
-
-                      <linearGradient
-                        id="activityWaveGradient"
-                        x1="0%"
-                        y1="0%"
-                        x2="100%"
-                        y2="0%"
-                      >
-
-                        <stop
-                          offset="0%"
-                          stopColor="#713cff"
-                        />
-
-                        <stop
-                          offset="50%"
-                          stopColor="#a855f7"
-                        />
-
-                        <stop
-                          offset="100%"
-                          stopColor="#22d3ee"
-                        />
-
-                      </linearGradient>
-
-                    </defs>
-
-
-                    <path
-                      className="activity-wave-glow"
-                      d="
-                        M0 110
-                        C30 110 35 75 65 75
-                        C95 75 100 125 130 125
-                        C160 125 165 50 200 50
-                        C235 50 235 105 270 105
-                        C305 105 310 70 345 70
-                        C380 70 385 120 420 120
-                        C455 120 460 45 495 45
-                        C530 45 535 90 565 90
-                        C580 90 590 75 600 75
-                      "
-                    />
-
-
-                    <path
-                      className="activity-wave-line"
-                      d="
-                        M0 110
-                        C30 110 35 75 65 75
-                        C95 75 100 125 130 125
-                        C160 125 165 50 200 50
-                        C235 50 235 105 270 105
-                        C305 105 310 70 345 70
-                        C380 70 385 120 420 120
-                        C455 120 460 45 495 45
-                        C530 45 535 90 565 90
-                        C580 90 590 75 600 75
-                      "
-                    />
-
-                  </svg>
-
-
-                  <i className="activity-pulse p1" />
-                  <i className="activity-pulse p2" />
-                  <i className="activity-pulse p3" />
-
-                </div>
-
-              </div>
-
-
-              {/* STATS */}
-
-              <div className="activity-stats">
-
-                <div className="activity-stat">
-
-                  <span className="activity-stat-label">
-                    AVG SCORE
-                  </span>
-
-                  <strong className="activity-stat-value">
-                    {averageScore.toFixed(1)}%
-                  </strong>
-
-                  <small className="activity-stat-sub">
-                    Overall performance
-                  </small>
-
-                </div>
-
-
-                <div className="activity-stat">
-
-                  <span className="activity-stat-label">
-                    BEST SCORE
-                  </span>
-
-                  <strong className="activity-stat-value">
-                    {bestScore.toFixed(0)}%
-                  </strong>
-
-                  <small className="activity-stat-sub">
-                    Personal best
-                  </small>
-
-                </div>
-
-
-                <div className="activity-stat">
-
-                  <span className="activity-stat-label">
-                    TODAY
-                  </span>
-
-                  <strong className="activity-stat-value">
-                    {todayCount}
-                  </strong>
-
-                  <small className="activity-stat-sub">
-                    Interviews today
-                  </small>
-
-                </div>
-
-
-                <div className="activity-stat">
-
-                  <span className="activity-stat-label">
-                    STATUS
-                  </span>
-
-                  <strong className="activity-stat-value activity-stat-live">
-                    {activeInterviews.length
-                      ? "ACTIVE"
-                      : "READY"}
-                  </strong>
-
-                  <small className="activity-stat-sub">
-                    Keep practicing
-                  </small>
-
-                </div>
-
-              </div>
-
-
-              {/* FOOTER */}
-
-              <div className="activity-footer">
-
-                <span>
-                  AI PERFORMANCE ENGINE
-                </span>
-
-
-                <div className="activity-bars">
-
-                  <span />
-                  <span />
-                  <span />
-                  <span />
-                  <span />
-                  <span />
-                  <span />
-
-                </div>
-
-
-                <span>
-                  REAL-TIME
-                </span>
-
-              </div>
-
-            </div>
-
-          </section>
-
-
-          {/* ====================================================
-              RECENT INTERVIEW TIMELINE
-              ==================================================== */}
-
-          <section className="secondary-grid">
-
-            <div className="panel recent-panel">
-
-              <div className="panel-header">
-
-                <div>
-
-                  <h2>
-                    Recent Sessions
-                  </h2>
-
-                  <p>
-                    Your latest interview sessions
-                  </p>
-
-                </div>
-
-                <button
-                  onClick={startInterview}
-                >
-                  New Interview
-                </button>
-
-              </div>
-
-
-              {recentInterviews.length === 0 ? (
-
-                <div className="empty-state">
-
-                  <div className="empty-icon">
-                    ♙
-                  </div>
-
-                  <h3>
-                    No interviews yet
-                  </h3>
-
-                  <p>
-                    Start your first AI interview
-                    to see your activity here.
+                  <p className="active-card-desc">
+                    You have an ongoing interview session. Continue right where you left off with voice or text responses.
                   </p>
 
                   <button
+                    type="button"
+                    className="action-card-button"
+                    onClick={() => navigate(`/interview/${activeInterview.id}`)}
+                  >
+                    Continue Interview <span>→</span>
+                  </button>
+                </div>
+              ) : (
+                <div className="empty-active-interview">
+                  <div className="empty-target-icon">🎯</div>
+                  <strong>No active interview session</strong>
+                  <p>
+                    Start a realistic AI mock interview tailored to your target role, difficulty, and seniority level.
+                  </p>
+                  <button
+                    type="button"
+                    className="action-card-button outline"
                     onClick={startInterview}
                   >
-                    Start Interview →
+                    Configure New Interview <span>→</span>
                   </button>
+                </div>
+              )}
+            </div>
 
+            {/* H. RECOMMENDED NEXT STEP */}
+            <div className="panel recommendation-panel">
+              <div className="panel-header">
+                <div>
+                  <span className="panel-badge">{recommendation.badge}</span>
+                  <h2>Recommended Preparation Step</h2>
+                </div>
+              </div>
+
+              <div className="recommendation-card">
+                <div className="recommendation-content">
+                  <div className="rec-icon">⚡</div>
+                  <div>
+                    <strong>{recommendation.title}</strong>
+                    <p>{recommendation.desc}</p>
+                  </div>
                 </div>
 
-              ) : (
+                <button
+                  type="button"
+                  className="action-card-button secondary"
+                  onClick={recommendation.action}
+                >
+                  {recommendation.buttonText} <span>→</span>
+                </button>
+              </div>
+            </div>
+          </section>
 
-                <div className="recent-list">
+          {/* ==================================================
+              PRACTICE MISSIONS & TOPIC MASTERY (TASK 6 ARCHITECTURE)
+          ================================================== */}
+          <section className="two-column-action-grid practice-stats-row">
+            {/* DAILY PRACTICE MISSIONS */}
+            <div className="panel practice-missions-panel">
+              <div className="panel-header">
+                <div>
+                  <span className="panel-badge">DAILY QUESTS</span>
+                  <h2>Daily Practice Missions</h2>
+                  <p>Daily coding and architectural challenges to sharpen your skills</p>
+                </div>
+                {practiceStats?.xp && (
+                  <span className="xp-pill-badge">
+                    ⚡ {practiceStats.xp.total_xp} Total XP
+                  </span>
+                )}
+              </div>
 
-                  {recentInterviews.map(
-                    (interview) => {
-
-                      const score =
-                        interview.score ?? 0
-
-                      return (
-
-                        <div
-                          className="recent-row"
-                          key={interview.id}
-                        >
-
-                          <div className="recent-company-logo">
-                            AI
-                          </div>
-
-
-                          <div className="recent-company-info">
-
-                            <strong>
-                              {interview.job_role ||
-                                "AI Interview"}
-                            </strong>
-
-                            <span>
-                              {interview.difficulty ||
-                                "Standard"}{" "}
-                              Interview
-                            </span>
-
-                          </div>
-
-
-                          <span
-                            className={`status-badge ${
-                              interview.status?.toLowerCase() !==
-                              "completed"
-                                ? "status-progress"
-                                : ""
-                            }`}
-                          >
-                            {interview.status}
-                          </span>
-
-
-                          <div
-                            className={`score-ring ${
-                              score >= 80
-                                ? "score-good"
-                                : score >= 60
-                                  ? "score-medium"
-                                  : "score-low"
-                            }`}
-                          >
-                            {score}%
-                          </div>
-
-
-                          <div className="recent-date">
-
-                            <strong>
-                              {formatDate(
-                                interview.created_at,
-                              )}
-                            </strong>
-
-                            <span>
-                              {interview.completed_at
-                                ? "Completed"
-                                : "Session"}
-                            </span>
-
-                          </div>
-
-
-                          <button
-                            className="recent-arrow"
-                            type="button"
-                            onClick={() =>
-                              openInterview(
-                                interview.id,
-                              )
-                            }
-                          >
-                            →
-                          </button>
-
+              <div className="missions-list">
+                {practiceStats?.missions?.map((m) => (
+                  <div key={m.id} className={`mission-item ${m.completed ? "mission-completed" : ""}`}>
+                    <div className="mission-left">
+                      <span className="mission-icon">{m.icon}</span>
+                      <div className="mission-info">
+                        <div className="mission-title-row">
+                          <strong>{m.title}</strong>
+                          {m.completed && <span className="mission-done-tag">Done ✓</span>}
                         </div>
+                        <p>{m.description}</p>
+                      </div>
+                    </div>
 
-                      )
+                    <div className="mission-right">
+                      <span className="mission-xp">+{m.xp_reward} XP</span>
+                      <div className="mission-track">
+                        <div
+                          className="mission-fill"
+                          style={{ width: `${Math.min(100, (m.progress / m.target) * 100)}%` }}
+                        />
+                      </div>
+                      <small className="mission-count">{m.progress} / {m.target}</small>
+                    </div>
+                  </div>
+                ))}
+              </div>
 
-                    },
-                  )}
+              <div className="panel-footer-action">
+                <button type="button" className="action-card-button secondary" onClick={openPractice}>
+                  Open Question Practice <span>→</span>
+                </button>
+              </div>
+            </div>
 
+            {/* TOPIC MASTERY & XP PROFILE */}
+            <div className="panel topic-mastery-panel">
+              <div className="panel-header">
+                <div>
+                  <span className="panel-badge">MASTERY TIERS</span>
+                  <h2>Topic Mastery &amp; Rank</h2>
+                  <p>Proficiency across technical interview competencies</p>
                 </div>
+                {practiceStats?.xp && (
+                  <span className="rank-tag">
+                    {practiceStats.xp.level_title}
+                  </span>
+                )}
+              </div>
 
+              {practiceStats?.xp && (
+                <div className="xp-progress-card">
+                  <div className="xp-card-meta">
+                    <span className="level-badge">Level {practiceStats.xp.level}</span>
+                    <span className="xp-fraction">
+                      <strong>{practiceStats.xp.current_level_xp}</strong> / {practiceStats.xp.next_level_xp} XP to Lvl {practiceStats.xp.level + 1}
+                    </span>
+                  </div>
+                  <div className="xp-bar-track">
+                    <div
+                      className="xp-bar-fill"
+                      style={{ width: `${practiceStats.xp.progress_pct}%` }}
+                    />
+                  </div>
+                </div>
               )}
 
+              <div className="mastery-topics-compact">
+                {practiceStats?.mastery?.top_topics && practiceStats.mastery.top_topics.length > 0 ? (
+                  practiceStats.mastery.top_topics.slice(0, 4).map((tm) => (
+                    <div key={tm.topic} className="compact-mastery-row">
+                      <div className="compact-mastery-meta">
+                        <span className="topic-name">{tm.topic}</span>
+                        <span className={`status-badge-small status-${tm.status.toLowerCase()}`}>
+                          {tm.status} ({tm.solved}/{tm.total})
+                        </span>
+                      </div>
+                      <div className="compact-track">
+                        <div
+                          className="compact-fill"
+                          style={{ width: `${tm.percentage}%` }}
+                        />
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="empty-mastery-hint">
+                    <p>Start solving questions in Question Practice to build topic mastery!</p>
+                  </div>
+                )}
+              </div>
             </div>
+          </section>
 
-
-            {/* SKILL BREAKDOWN */}
-
-            <div className="panel skills-panel">
-
+          {/* ==================================================
+              PHASE 8B: CODING ARENA PERFORMANCE (100% REAL DB DATA)
+          ================================================== */}
+          <section className="two-column-action-grid coding-arena-dashboard-panel" id="coding-section">
+            <div className="panel coding-stats-panel">
               <div className="panel-header">
-
                 <div>
-
-                  <h2>
-                    Skill Breakdown
-                  </h2>
-
-                  <p>
-                    Based on your current performance
-                  </p>
-
+                  <span className="panel-badge">CODING ARENA</span>
+                  <h2>Algorithm & Data Structure Performance</h2>
+                  <p>Real-time submission analytics and problem solving metrics</p>
                 </div>
-
-                <button>
-                  View All
-                </button>
-
-              </div>
-
-
-              <div className="skills-list">
-
-                {skills.map((skill) => (
-
-                  <div
-                    className="skill-row"
-                    key={skill.name}
-                  >
-
-                    <div className="skill-heading">
-
-                      <span>
-                        {skill.name}
-                      </span>
-
-                      <strong>
-                        {skill.value}%
-                      </strong>
-
-                    </div>
-
-
-                    <div className="skill-track">
-
-                      <div
-                        className={`skill-fill ${skill.className}`}
-                        style={{
-                          width:
-                            `${skill.value}%`,
-                        }}
-                      />
-
-                    </div>
-
-                  </div>
-
-                ))}
-
-              </div>
-
-            </div>
-
-
-            {/* DAILY GOAL */}
-
-            <div className="panel daily-panel">
-
-              <div className="panel-header">
-
-                <h2>
-                  Daily Goal
-                </h2>
-
-              </div>
-
-
-              <div className="daily-content">
-
-                <div
-                  className="goal-ring"
-                  style={{
-                    background:
-                      `conic-gradient(
-                        #34d399 ${dailyPercentage * 3.6}deg,
-                        #172139 ${dailyPercentage * 3.6}deg
-                      )`,
-                  }}
+                <button
+                  type="button"
+                  className="action-card-button secondary"
+                  onClick={() => navigate("/coding")}
+                  style={{ width: "auto", padding: "0.4rem 0.9rem" }}
                 >
+                  Enter Arena <span>→</span>
+                </button>
+              </div>
 
-                  <div>
-
-                    <strong>
-                      {dailyPercentage}%
-                    </strong>
-
+              <div className="coding-overview-metrics-grid">
+                <div className="coding-metric-box">
+                  <span className="coding-metric-num">{codingStats?.total_solved || 0}</span>
+                  <span className="coding-metric-lbl">Solved / {codingStats?.total_attempted || 0} Attempted</span>
+                  <div className="coding-difficulty-pills">
+                    <span className="diff-pill easy">{codingStats?.easy_solved || 0} Easy</span>
+                    <span className="diff-pill medium">{codingStats?.medium_solved || 0} Med</span>
+                    <span className="diff-pill hard">{codingStats?.hard_solved || 0} Hard</span>
                   </div>
-
                 </div>
 
+                <div className="coding-metric-box">
+                  <span className="coding-metric-num">{codingStats?.success_rate || 0}%</span>
+                  <span className="coding-metric-lbl">Success Rate</span>
+                  <small style={{ color: "#94a3b8" }}>
+                    Avg Score: {Math.round(codingStats?.average_score || 0)} pts
+                  </small>
+                </div>
 
-                <div className="daily-stats">
+                <div className="coding-metric-box">
+                  <span className="coding-metric-num">🔥 {codingStats?.current_streak || 0}</span>
+                  <span className="coding-metric-lbl">Day Coding Streak</span>
+                  <small style={{ color: "#94a3b8" }}>
+                    Longest: {codingStats?.longest_streak || 0} Days
+                  </small>
+                </div>
+              </div>
 
-                  <div>
+              {codingStats?.topic_breakdown && Object.keys(codingStats.topic_breakdown).length > 0 && (
+                <div className="coding-topics-breakdown">
+                  <span className="coding-breakdown-title">Topic Proficiency</span>
+                  <div className="coding-topics-chips">
+                    {Object.entries(codingStats.topic_breakdown).map(([top, info]) => {
+                      const countText = typeof info === "object" && info !== null
+                        ? `${(info as any).solved ?? 0}/${(info as any).attempted ?? 0}`
+                        : `${info} solved`
+                      return (
+                        <div key={top} className="coding-topic-chip">
+                          <span className="topic-name">{top}</span>
+                          <span className="topic-count">{countText}</span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
 
-                    <strong>
-                      {todayCount}/4
-                    </strong>
+            <div className="panel coding-recent-panel">
+              <div className="panel-header">
+                <div>
+                  <span className="panel-badge">ACTIVITY</span>
+                  <h2>Recent Coding Submissions</h2>
+                  <p>Latest evaluated code submissions and AI reviews</p>
+                </div>
+              </div>
 
-                    <span>
-                      Interviews Completed
-                    </span>
+              <div className="coding-recent-list">
+                {codingStats?.recent_submissions && codingStats.recent_submissions.length > 0 ? (
+                  codingStats.recent_submissions.slice(0, 4).map((sub) => (
+                    <div
+                      key={sub.id}
+                      className="coding-recent-item"
+                      onClick={() => navigate(`/coding/${sub.problem_id}`)}
+                    >
+                      <div className="recent-item-left">
+                        <span className={`recent-status-dot ${sub.status === "Accepted" ? "accepted" : "failed"}`} />
+                        <div>
+                          <strong>{sub.status} ({sub.score} pts)</strong>
+                          <small>{sub.language} • {sub.passed_tests}/{sub.total_tests} Tests Passed</small>
+                        </div>
+                      </div>
+                      <div className="recent-item-right">
+                        <span>{new Date(sub.created_at).toLocaleDateString()}</span>
+                        <span>→</span>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="coding-empty-recent">
+                    <p>No coding submissions recorded yet.</p>
+                    <button
+                      type="button"
+                      className="action-card-button secondary"
+                      onClick={() => navigate("/coding")}
+                      style={{ marginTop: "0.5rem" }}
+                    >
+                      Solve Your First Challenge <span>→</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          </section>
 
+          {/* ==================================================
+              D & E. PERFORMANCE OVERVIEW & REAL ANALYTICS
+          ================================================== */}
+          <section className="main-grid" id="performance-section">
+            {/* D. PERFORMANCE OVERVIEW */}
+            <div className="panel performance-panel">
+              <div className="panel-header">
+                <div>
+                  <h2>Performance Trajectory</h2>
+                  <p>Score progression across completed interview sessions</p>
+                </div>
+
+                {completedInterviews.length > 0 && (
+                  <select
+                    className="period-select"
+                    value={activePeriod}
+                    onChange={(e) =>
+                      setActivePeriod(e.target.value as "5" | "10" | "all")
+                    }
+                  >
+                    <option value="5">Last 5 Sessions</option>
+                    <option value="10">Last 10 Sessions</option>
+                    <option value="all">All Sessions</option>
+                  </select>
+                )}
+              </div>
+
+              {completedInterviews.length >= 2 ? (
+                <div className="chart-wrapper">
+                  <div className="chart-y-axis">
+                    <span>100%</span>
+                    <span>75%</span>
+                    <span>50%</span>
+                    <span>25%</span>
+                    <span>0%</span>
                   </div>
 
-
-                  <div>
-
-                    <strong>
-                      {completedInterviews.length} total
-                    </strong>
-
-                    <span>
-                      Completed Interviews
-                    </span>
-
-
-                    <div className="mini-track">
-
-                      <div
-                        style={{
-                          width:
-                            `${Math.min(
-                              completedInterviews.length *
-                                10,
-                              100,
-                            )}%`,
-                        }}
-                      />
-
+                  <div className="chart-area">
+                    <div className="chart-lines">
+                      <i /><i /><i /><i /><i />
                     </div>
 
-                  </div>
+                    <svg
+                      viewBox="0 0 450 150"
+                      preserveAspectRatio="none"
+                      className="performance-svg"
+                    >
+                      <defs>
+                        <linearGradient
+                          id="chartGradient"
+                          x1="0"
+                          y1="0"
+                          x2="0"
+                          y2="1"
+                        >
+                          <stop offset="0%" stopColor="#8b5cf6" stopOpacity="0.4" />
+                          <stop offset="100%" stopColor="#4c1d95" stopOpacity="0.0" />
+                        </linearGradient>
+                      </defs>
 
+                      <polygon
+                        points={`0,150 ${graphPoints} 450,150`}
+                        fill="url(#chartGradient)"
+                      />
+
+                      <polyline
+                        points={graphPoints}
+                        fill="none"
+                        stroke="#a855f7"
+                        strokeWidth="3"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+
+                      {performanceInterviews.map((item, index) => {
+                        const x =
+                          performanceInterviews.length === 1
+                            ? 225
+                            : (index / (performanceInterviews.length - 1)) * 450
+                        const score = Number(item?.score || 0)
+                        const y = Math.max(5, Math.min(150, 150 - score * 1.25))
+
+                        return (
+                          <g key={item.id || index}>
+                            <circle
+                              cx={x}
+                              cy={y}
+                              r="5"
+                              fill="#c084fc"
+                              stroke="#0f172a"
+                              strokeWidth="2"
+                            />
+                          </g>
+                        )
+                      })}
+                    </svg>
+
+                    <div className="chart-x-axis">
+                      {performanceInterviews.map((item) => (
+                        <span key={item.id}>
+                          {item.created_at
+                            ? new Date(item.created_at).toLocaleDateString("en-US", {
+                                month: "short",
+                                day: "numeric",
+                              })
+                            : "—"}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
                 </div>
-
-              </div>
-
-            </div>
-
-          </section>
-
-
-          {/* ====================================================
-              LOWER WIDGETS
-              ==================================================== */}
-
-          <section className="widgets-grid">
-
-            {/* AI MENTOR */}
-
-            <div className="panel mentor-panel">
-
-              <div className="panel-header">
-
-                <h2>
-                  AI Mentor
-                </h2>
-
-                <span className="online-status">
-
-                  <i />
-
-                  Online
-
-                </span>
-
-              </div>
-
-
-              <div className="mentor-content">
-
-                <div className="mentor-robot">
-
-                  <div className="robot-antenna" />
-
-                  <div className="robot-head">
-
-                    <div className="robot-eye" />
-                    <div className="robot-eye" />
-
-                  </div>
-
-
-                  <div className="robot-body">
-
-                    <div className="robot-core" />
-
-                  </div>
-
-                </div>
-
-
-                <div className="mentor-message">
-
+              ) : (
+                <div className="chart-empty-state">
+                  <div className="chart-empty-icon">📈</div>
+                  <strong>Need more interview data</strong>
                   <p>
-
-                    Hi{" "}
-                    {user?.full_name?.split(
-                      " ",
-                    )[0] ||
-                      "Gourab"}{" "}
-                    👋
-
-                    <br />
-
-                    I'm here to help you improve
-                    your interview skills.
-
+                    Complete at least 2 interview sessions to visualize your score progression and performance trajectory over time.
                   </p>
-
+                  <button type="button" onClick={startInterview}>
+                    Start an Interview →
+                  </button>
                 </div>
-
-              </div>
-
-
-              <button className="mentor-button">
-
-                Chat with AI Mentor
-
-                <span>
-                  →
-                </span>
-
-              </button>
-
+              )}
             </div>
 
-
-            {/* ACHIEVEMENTS */}
-
-            <div className="panel achievements-panel">
-
+            {/* E. DOMAIN & ROLE ANALYTICS */}
+            <div className="panel analytics-panel" id="analytics-section">
               <div className="panel-header">
-
-                <h2>
-                  Achievements
-                </h2>
-
-                <button>
-                  View All
-                </button>
-
+                <div>
+                  <h2>Domain & Difficulty Breakdown</h2>
+                  <p>Real performance aggregated from your evaluations</p>
+                </div>
               </div>
 
-
-              <div className="achievement-list">
-
-                <div className="achievement">
-
-                  <div className="achievement-icon purple">
-                    ★
+              {completedInterviews.length > 0 ? (
+                <div className="breakdown-container">
+                  {/* BY DIFFICULTY */}
+                  <div className="breakdown-group">
+                    <span className="breakdown-group-title">PERFORMANCE BY DIFFICULTY</span>
+                    <div className="difficulty-bars">
+                      {difficultyPerformance.map((item) => (
+                        <div key={item.level} className="difficulty-row">
+                          <div className="diff-header">
+                            <span>{item.level}</span>
+                            <strong>
+                              {item.avg !== null ? `${item.avg}%` : "Not attempted"}
+                            </strong>
+                          </div>
+                          <div className="diff-track">
+                            <div
+                              className={`diff-fill ${item.level.toLowerCase()}`}
+                              style={{ width: `${item.avg ?? 0}%` }}
+                            />
+                          </div>
+                          <small>{item.count} session{item.count === 1 ? "" : "s"}</small>
+                        </div>
+                      ))}
+                    </div>
                   </div>
 
-                  <strong>
-                    Consistent
-                  </strong>
-
-                  <span>
-                    {Math.min(
-                      interviews.length,
-                      7,
-                    )} Days
-                  </span>
-
+                  {/* BY ROLE */}
+                  {rolePerformance.length > 0 && (
+                    <div className="breakdown-group">
+                      <span className="breakdown-group-title">TOP TARGET ROLES</span>
+                      <div className="role-bars">
+                        {rolePerformance.map((item) => (
+                          <div key={item.role} className="role-row">
+                            <div className="role-header">
+                              <span className="role-name">{item.role}</span>
+                              <span className="role-score">{item.average}% avg</span>
+                            </div>
+                            <div className="role-track">
+                              <div
+                                className="role-fill"
+                                style={{ width: `${item.average}%` }}
+                              />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
-
-
-                <div className="achievement">
-
-                  <div className="achievement-icon blue">
-                    &lt;/&gt;
-                  </div>
-
-                  <strong>
-                    Code Master
-                  </strong>
-
-                  <span>
-                    {completedInterviews.length}
-                    {" "}
-                    Problems
-                  </span>
-
+              ) : (
+                <div className="analytics-empty-state">
+                  <div className="empty-target-icon">📊</div>
+                  <strong>No evaluated sessions yet</strong>
+                  <p>
+                    Complete your first mock interview to unlock breakdown analytics by job role and difficulty level.
+                  </p>
                 </div>
-
-
-                <div className="achievement">
-
-                  <div className="achievement-icon green">
-                    ★
-                  </div>
-
-                  <strong>
-                    Top Performer
-                  </strong>
-
-                  <span>
-                    Score {bestScore.toFixed(0)}+
-                  </span>
-
-                </div>
-
-
-                <div className="achievement">
-
-                  <div className="achievement-icon gold">
-                    ♛
-                  </div>
-
-                  <strong>
-                    Interview Pro
-                  </strong>
-
-                  <span>
-                    {completedInterviews.length}/20
-                  </span>
-
-                </div>
-
-              </div>
-
+              )}
             </div>
-
           </section>
 
-
-          {/* ====================================================
-              PREMIUM BANNER
-              ==================================================== */}
-
-          <section className="premium-banner">
-
-            <div className="premium-visual">
-
-              <div className="rocket">
-                🚀
+          {/* ==================================================
+              F. RECENT SESSIONS TABLE
+          ================================================== */}
+          <section className="panel recent-sessions-panel" id="recent-section">
+            <div className="panel-header">
+              <div>
+                <h2>Recent Interview Sessions</h2>
+                <p>Complete history of your mock interviews with instant access to evaluations</p>
               </div>
 
-              <div className="rocket-glow" />
-
-            </div>
-
-
-            <div className="premium-copy">
-
-              <h2>
-                Unlock Your Full Potential! 🚀
-              </h2>
-
-              <p>
-                Upgrade to Premium for unlimited
-                interviews, advanced analytics,
-                and personalized mentoring.
-              </p>
-
-              <button>
-
-                Upgrade Now
-
-                <span>
-                  →
-                </span>
-
+              <button
+                type="button"
+                className="panel-header-btn"
+                onClick={startInterview}
+              >
+                + New Interview
               </button>
-
             </div>
 
-
-            <div className="premium-features">
-
-              <div>
-
-                <strong>
-                  ∞
-                </strong>
-
-                <span>
-                  Unlimited
-                  <br />
-                  Interviews
-                </span>
-
+            {recentInterviews.length === 0 ? (
+              <div className="empty-state">
+                <div className="empty-icon">♙</div>
+                <h3>{search ? "No matching sessions found" : "No interviews taken yet"}</h3>
+                <p>
+                  {search
+                    ? "Try searching for a different role or difficulty."
+                    : "Launch your first mock interview session to see your activity, scores, and AI feedback here."}
+                </p>
+                {!search && (
+                  <button type="button" onClick={startInterview}>
+                    Start First Interview →
+                  </button>
+                )}
               </div>
+            ) : (
+              <>
+                <div className="sessions-table-wrapper">
+                  <table className="sessions-table">
+                    <thead>
+                      <tr>
+                        <th>Target Role</th>
+                        <th>Difficulty</th>
+                        <th>Date</th>
+                        <th>Status</th>
+                        <th>Score</th>
+                        <th>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {recentInterviews.map((item) => {
+                        const scoreNum = Number(item?.score)
+                        const hasScore = Number.isFinite(scoreNum)
+                        const isCompleted = item?.status === "completed"
 
+                        return (
+                          <tr key={item.id}>
+                            <td>
+                              <div className="table-role-cell">
+                                <span className="table-role-icon">&lt;/&gt;</span>
+                                <div>
+                                  <strong>{item.job_role || "Interview"}</strong>
+                                </div>
+                              </div>
+                            </td>
+                            <td>
+                              <span className={`diff-pill ${(item.difficulty || "medium").toLowerCase()}`}>
+                                {item.difficulty || "Medium"}
+                              </span>
+                            </td>
+                            <td>{formatDate(item.created_at)}</td>
+                            <td>
+                              <span className={`status-pill ${item.status || "created"}`}>
+                                {formatStatus(item.status)}
+                              </span>
+                            </td>
+                            <td>
+                              {hasScore ? (
+                                <span
+                                  className={`score-badge ${
+                                    scoreNum >= 80
+                                      ? "score-high"
+                                      : scoreNum >= 60
+                                      ? "score-mid"
+                                      : "score-low"
+                                  }`}
+                                >
+                                  {Math.round(scoreNum)}%
+                                </span>
+                              ) : (
+                                <span className="score-pending">—</span>
+                              )}
+                            </td>
+                            <td>
+                              {isCompleted ? (
+                                <button
+                                  type="button"
+                                  className="table-action-btn view-result"
+                                  onClick={() => navigate(`/results/${item.id}`)}
+                                >
+                                  View Result →
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  className="table-action-btn resume-session"
+                                  onClick={() => navigate(`/interview/${item.id}`)}
+                                >
+                                  Continue →
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
 
-              <div>
-
-                <strong>
-                  ▥
-                </strong>
-
-                <span>
-                  Advanced
-                  <br />
-                  Analytics
-                </span>
-
-              </div>
-
-
-              <div>
-
-                <strong>
-                  ♧
-                </strong>
-
-                <span>
-                  Personalized
-                  <br />
-                  Roadmap
-                </span>
-
-              </div>
-
-
-              <div>
-
-                <strong>
-                  ♡
-                </strong>
-
-                <span>
-                  Priority
-                  <br />
-                  Support
-                </span>
-
-              </div>
-
-            </div>
-
+                {filteredInterviews.length > 6 && (
+                  <button
+                    type="button"
+                    className="sessions-toggle-btn"
+                    onClick={() => setShowAllSessions((val) => !val)}
+                  >
+                    {showAllSessions ? "Show Fewer Sessions" : `View All ${filteredInterviews.length} Sessions`}
+                  </button>
+                )}
+              </>
+            )}
           </section>
 
-        </div>
+          {/* ==================================================
+              PHASE 11: PERSONALIZED LEARNING INTELLIGENCE
+          ================================================== */}
+          <section className="main-grid" id="learning-section">
+            {/* WEAK TOPICS PANEL */}
+            <div className="panel learning-weak-panel">
+              <div className="panel-header">
+                <div>
+                  <span className="panel-badge">AI ANALYSIS</span>
+                  <h2>Weak Topic Radar</h2>
+                  <p>Topics needing the most improvement based on your performance</p>
+                </div>
+                <button
+                  type="button"
+                  className="action-card-button secondary"
+                  onClick={() => navigate("/practice")}
+                  style={{ width: "auto", padding: "0.4rem 0.9rem" }}
+                >
+                  Practice Now →
+                </button>
+              </div>
 
+              {weakTopics.length === 0 ? (
+                <div className="learning-empty-hint">
+                  <span className="learning-empty-icon">🧠</span>
+                  <p>Complete interviews or coding sessions to unlock your personalized weak-topic analysis.</p>
+                </div>
+              ) : (
+                <div className="weak-topics-list">
+                  {weakTopics.slice(0, 6).map((wt, idx) => {
+                    const scoreNum = wt.combined_score ?? 0
+                    const conf = Math.round(Math.min(Math.max(scoreNum, 0), 1) * 100)
+                    const urgency = wt.priority ?? "low"
+                    const urgencyColor =
+                      urgency === "high" ? "#ef4444" :
+                      urgency === "medium" ? "#f97316" : "#6366f1"
+                    return (
+                      <div key={`${wt.topic}-${idx}`} className="weak-topic-row">
+                        <div className="weak-topic-meta">
+                          <span className="weak-topic-name">{wt.topic}</span>
+                          <span
+                            className="weak-urgency-tag"
+                            style={{ color: urgencyColor, borderColor: urgencyColor }}
+                          >
+                            {urgency.toUpperCase()} PRIORITY
+                          </span>
+                        </div>
+                        <div className="weak-topic-bar-track">
+                          <div
+                            className="weak-topic-bar-fill"
+                            style={{
+                              width: `${conf}%`,
+                              background: `linear-gradient(90deg, ${urgencyColor}88, ${urgencyColor})`,
+                            }}
+                          />
+                        </div>
+                        <small className="weak-topic-conf">{wt.reason || wt.category}</small>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* DAILY PRACTICE PLAN PANEL */}
+            <div className="panel learning-daily-panel">
+              <div className="panel-header">
+                <div>
+                  <span className="panel-badge">TODAY&apos;S PLAN</span>
+                  <h2>Daily Practice Plan</h2>
+                  <p>Your AI-generated tasks for today</p>
+                </div>
+                {dailyPlan && (
+                  <span className="daily-plan-date">
+                    {new Date(dailyPlan.plan_date).toLocaleDateString("en-US", {
+                      weekday: "short",
+                      month: "short",
+                      day: "numeric",
+                    })}
+                  </span>
+                )}
+              </div>
+
+              {!dailyPlan || !Array.isArray(dailyPlan.items) || dailyPlan.items.length === 0 ? (
+                <div className="learning-empty-hint">
+                  <span className="learning-empty-icon">📅</span>
+                  <p>Your daily practice plan generates after completing your first interview or coding session.</p>
+                </div>
+              ) : (
+                <div className="daily-tasks-list">
+                  {dailyPlan.items.map((task) => (
+                    <div
+                      key={task.id}
+                      className={`daily-task-row ${task.is_completed ? "completed" : ""} ${togglingTask === task.id ? "toggling" : ""}`}
+                    >
+                      <button
+                        type="button"
+                        className="daily-task-check"
+                        aria-label={task.is_completed ? "Mark incomplete" : "Mark complete"}
+                        disabled={togglingTask === task.id}
+                        onClick={async () => {
+                          setTogglingTask(task.id)
+                          try {
+                            const updated = await toggleDailyPracticeTask(task.id)
+                            setDailyPlan(updated)
+                          } catch {
+                            // silently ignore
+                          } finally {
+                            setTogglingTask(null)
+                          }
+                        }}
+                      >
+                        {task.is_completed ? "✓" : "○"}
+                      </button>
+                      <div className="daily-task-info">
+                        <strong>{task.title}</strong>
+                        {task.topic && <small>{task.topic}</small>}
+                      </div>
+                      {task.duration_mins > 0 && (
+                        <span className="daily-task-duration">
+                          {task.duration_mins}m
+                        </span>
+                      )}
+                    </div>
+                  ))}
+
+                  {/* completion bar */}
+                  {(() => {
+                    const done = dailyPlan.items.filter(t => t.is_completed).length
+                    const total = dailyPlan.items.length
+                    const pct = total > 0 ? Math.round((done / total) * 100) : 0
+                    return (
+                      <div className="daily-plan-progress">
+                        <div className="daily-plan-bar-track">
+                          <div className="daily-plan-bar-fill" style={{ width: `${pct}%` }} />
+                        </div>
+                        <small>{done} / {total} tasks completed ({pct}%)</small>
+                      </div>
+                    )
+                  })()}
+                </div>
+              )}
+            </div>
+          </section>
+
+          {/* ==================================================
+              G. REAL MILESTONES (NO FABRICATED BADGES)
+          ================================================== */}
+          <section className="panel milestones-panel" id="milestones-section">
+            <div className="panel-header">
+              <div>
+                <h2>Preparation Milestones</h2>
+                <p>Track your interview preparation consistency and score milestones</p>
+              </div>
+
+              <button
+                type="button"
+                className="panel-header-btn"
+                onClick={() => navigate("/achievements")}
+              >
+                View All Achievements →
+              </button>
+            </div>
+
+            <div className="milestones-grid">
+              {milestones.map((m) => (
+                <div
+                  key={m.id}
+                  className={`milestone-card ${m.unlocked ? "unlocked" : "locked"}`}
+                >
+                  <div className="milestone-top">
+                    <span className="milestone-icon">{m.icon}</span>
+                    <span className={`milestone-badge ${m.unlocked ? "unlocked" : "locked"}`}>
+                      {m.unlocked ? "UNLOCKED" : "IN PROGRESS"}
+                    </span>
+                  </div>
+
+                  <strong>{m.title}</strong>
+                  <p>{m.desc}</p>
+
+                  <div className="milestone-footer">
+                    <small>Progress: {m.progress}</small>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        </div>
       </main>
 
+      {/* REAL-TIME NOTIFICATION TOAST */}
+      {realtimeToast && (
+        <div className="realtime-toast-banner" onClick={() => setRealtimeToast(null)}>
+          <span className="toast-icon">{realtimeToast.icon || "🔔"}</span>
+          <div className="toast-body">
+            <strong>{realtimeToast.title}</strong>
+            <p>{realtimeToast.message}</p>
+          </div>
+          <button className="toast-close" onClick={(e) => { e.stopPropagation(); setRealtimeToast(null); }}>×</button>
+        </div>
+      )}
+
+      {/* MOBILE DRAWER OVERLAY */}
+      {mobileMenu && (
+        <button
+          type="button"
+          className="dashboard-mobile-overlay"
+          aria-label="Close navigation menu"
+          onClick={() => setMobileMenu(false)}
+        />
+      )}
     </div>
   )
 }

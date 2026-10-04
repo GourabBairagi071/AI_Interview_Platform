@@ -16,6 +16,7 @@ class ResumeResponse(BaseModel):
     file_url: str
     uploaded_at: datetime
     updated_at: datetime
+    analysis: dict | None = None
 
     model_config = {
         "from_attributes": True
@@ -73,3 +74,5 @@ class ResumeOptimizeResponse(BaseModel):
     message: str
     resume: ResumeResponse
     optimized_resume: dict
+    pdf_url: str | None = None
+    pdf_base64: str | None = None

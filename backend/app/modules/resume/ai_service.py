@@ -145,6 +145,41 @@ def _safe_list(value):
     ]
 
 
+def _clean_bullet_list(value):
+    """
+    Clean bullet list items by stripping decorative bullets, leading dashes/markers,
+    and trailing whitespaces.
+    """
+    if not isinstance(value, list):
+        return []
+
+    cleaned = []
+    for item in value:
+        s = str(item).strip()
+        s = re.sub(r"^[\s•▪▫●★✓✔–—\-\*\u2022\u25aa\u25ab\u25cf\u2713\u2714\u2013\u2014]+", "", s).strip()
+    return cleaned
+
+
+def _parse_safe_score(val) -> int | None:
+    """
+    Safely converts numeric or string ATS score (e.g. 78, '78', '78%', '78/100', '78 out of 100')
+    into an integer 0-100. Returns None if value is missing/invalid.
+    """
+    if val is None or val == "":
+        return None
+    if isinstance(val, (int, float)):
+        return int(max(0, min(100, round(val))))
+    if isinstance(val, str):
+        match = re.search(r"(\d+(?:\.\d+)?)", val.strip())
+        if match:
+            try:
+                num = float(match.group(1))
+                return int(max(0, min(100, round(num))))
+            except ValueError:
+                pass
+    return None
+
+
 # ============================================================
 # ANALYZE RESUME
 # ============================================================
@@ -249,31 +284,19 @@ STRICT RULES:
     # ATS SCORE
     # --------------------------------------------------------
 
-    try:
-
-        ats_score = float(
-            result.get(
-                "ats_score",
-                0,
-            )
-        )
-
-    except (
-        TypeError,
-        ValueError,
-    ):
-
-        ats_score = 0
-
-    result["ats_score"] = int(
-        max(
-            0,
-            min(
-                100,
-                ats_score,
-            ),
-        )
+    raw_score = (
+        result.get("ats_score")
+        if result.get("ats_score") is not None
+        else result.get("atsScore")
+        if result.get("atsScore") is not None
+        else result.get("score")
+        if result.get("score") is not None
+        else result.get("estimated_ats_score")
     )
+
+    parsed_score = _parse_safe_score(raw_score)
+    result["ats_score"] = parsed_score if parsed_score is not None else 0
+
 
     # --------------------------------------------------------
     # Normalize lists
@@ -367,250 +390,6 @@ STRICT RULES:
     result["role_matching"] = clean_roles
 
     return result
-    # --------------------------------------------------------
-    # Prevent oversized Groq requests
-    # --------------------------------------------------------
-
-    MAX_RESUME_CHARS = 7000
-
-    resume_text = resume_text.strip()
-
-    if len(resume_text) > MAX_RESUME_CHARS:
-        resume_text = resume_text[
-            :MAX_RESUME_CHARS
-        ]
-
-    prompt = f"""
-You are an expert ATS resume analyzer and technical recruiter.
-
-Analyze the following resume.
-
-RESUME:
-----------------
-{resume_text}
-----------------
-
-Return ONLY valid JSON.
-
-Use exactly this structure:
-
-{{
-  "ats_score": 0,
-  "skills": [],
-  "strengths": [],
-  "weaknesses": [],
-  "suggestions": [],
-  "role_matching": [
-    {{
-      "role": "",
-      "match": 0,
-      "reason": ""
-    }}
-  ]
-}}
-
-Rules:
-
-1. ats_score must be an integer from 0 to 100.
-
-2. skills:
-Extract only skills that are actually present
-in the resume.
-
-3. strengths:
-Identify genuine strengths supported by the resume.
-
-4. weaknesses:
-Identify realistic weaknesses or missing areas.
-
-5. suggestions:
-Give practical improvements for increasing ATS
-compatibility.
-
-6. role_matching:
-Evaluate suitable technical roles based only
-on the resume.
-
-Do not invent:
-- companies
-- degrees
-- certifications
-- technologies
-- projects
-- achievements
-- experience
-- metrics
-
-Return JSON only.
-"""
-
-
-    try:
-
-        response = client.chat.completions.create(
-            model=MODEL,
-
-            messages=[
-                {
-                    "role": "user",
-                    "content": prompt,
-                }
-            ],
-
-            temperature=0.1,
-
-            max_completion_tokens=1200,
-
-            response_format={
-                "type": "json_object"
-            },
-        )
-
-    except Exception as exc:
-
-        raise ValueError(
-            f"AI resume analysis failed: {exc}"
-        ) from exc
-
-
-    content = _get_message_content(
-        response
-    )
-
-    result = _extract_json(
-        content
-    )
-
-
-    # --------------------------------------------------------
-    # Normalize ATS score
-    # --------------------------------------------------------
-
-    try:
-
-        ats_score = float(
-            result.get(
-                "ats_score",
-                0,
-            )
-        )
-
-    except (
-        TypeError,
-        ValueError,
-    ):
-
-        ats_score = 0
-
-
-    result["ats_score"] = int(
-        max(
-            0,
-            min(
-                100,
-                ats_score,
-            ),
-        )
-    )
-
-
-    # --------------------------------------------------------
-    # Normalize lists
-    # --------------------------------------------------------
-
-    result["skills"] = _safe_list(
-        result.get("skills")
-    )
-
-    result["strengths"] = _safe_list(
-        result.get("strengths")
-    )
-
-    result["weaknesses"] = _safe_list(
-        result.get("weaknesses")
-    )
-
-    result["suggestions"] = _safe_list(
-        result.get("suggestions")
-    )
-
-
-    # --------------------------------------------------------
-    # Role matching
-    # --------------------------------------------------------
-
-    role_matching = result.get(
-        "role_matching",
-        [],
-    )
-
-    if not isinstance(
-        role_matching,
-        list,
-    ):
-        role_matching = []
-
-
-    clean_roles = []
-
-    for item in role_matching:
-
-        if not isinstance(
-            item,
-            dict,
-        ):
-            continue
-
-        try:
-
-            match = float(
-                item.get(
-                    "match",
-                    0,
-                )
-            )
-
-        except (
-            TypeError,
-            ValueError,
-        ):
-
-            match = 0
-
-
-        clean_roles.append(
-            {
-                "role": str(
-                    item.get(
-                        "role",
-                        "",
-                    )
-                ),
-                "match": int(
-                    max(
-                        0,
-                        min(
-                            100,
-                            match,
-                        ),
-                    )
-                ),
-                "reason": str(
-                    item.get(
-                        "reason",
-                        "",
-                    )
-                ),
-            }
-        )
-
-
-    result["role_matching"] = (
-        clean_roles
-    )
-
-
-    return result
 
 
 # ============================================================
@@ -654,8 +433,7 @@ async def generate_optimized_resume(
 
 
     prompt = f"""
-You are an expert ATS resume writer and
-technical recruiter.
+You are an expert ATS resume writer and technical recruiter.
 
 TARGET JOB ROLE:
 {target_role}
@@ -665,63 +443,62 @@ EXISTING RESUME:
 {resume_text}
 ----------------
 
-Create an ATS-optimized version of this resume
-for the target job role.
+Create an ATS-optimized, single-column version of this resume tailored to the target job role.
 
-IMPORTANT:
+CRITICAL RULES - STRICT ADHERENCE REQUIRED:
 
-Never invent information.
-
-Do NOT invent:
-- companies
+1. ABSOLUTELY NO FABRICATION:
+Never invent or hallucinate candidate information.
+Never invent:
+- company names
+- employment history
 - job titles
-- dates
-- degrees
-- universities
+- dates or durations
+- degrees or institutions
+- CGPA or grades
 - certifications
 - projects
-- technologies
-- skills
-- achievements
-- metrics
+- achievements or awards
+- technologies or tools
+- numerical metrics or statistics
 
-Only improve information already present.
+2. ONLY SOURCE-BACKED CONTENT:
+- Extract the candidate's real name from the resume.
+- Extract only contact information actually present in the resume.
+- Only include sections and items for which actual source information exists.
+- If a section (e.g. certifications, achievements, projects) has no source data in the resume, leave that array empty [].
 
-You MAY:
-- improve grammar
-- improve wording
-- improve bullet points
-- reorganize sections
-- prioritize relevant skills
-- improve ATS keyword placement
-- improve professional summary
-- remove repetition
-- make achievements clearer
-- use strong action verbs
+3. ATS OPTIMIZATION PERMITTED ACTIONS:
+- Rewrite phrasing for clarity, conciseness, and professional tone.
+- Improve grammar and eliminate repetition.
+- Prioritize technical skills and keywords relevant to the target role ({target_role}).
+- Reorganize sections into a clean single-column ATS hierarchy.
+- Convert responsibilities into strong, truthful bullet points starting with impactful action verbs.
+- Optimize keywords naturally based on the target role without keyword-stuffing.
 
-The generated resume should be realistic,
-professional and ATS-friendly.
+4. ATS-COMPATIBLE TEXT FORMATTING:
+- Do NOT use emojis, decorative icons, special bullet glyphs (e.g. •, ▪, ▫, ●, ★, ✔, ✓), or non-standard symbols anywhere in the response.
+- In all bullet arrays ("bullets", "certifications", "achievements"), provide plain text strings without leading bullet characters or dashes (e.g. "Spearheaded backend architecture..." NOT "- Spearheaded..." or "• Spearheaded...").
+- Use standard ASCII punctuation (hyphens "-" for date ranges, standard single/double quotes, standard ampersand "&").
 
-Return ONLY valid JSON.
-
-Use exactly this structure:
+Return ONLY valid JSON matching this exact structure:
 
 {{
+  "name": "Candidate Full Name extracted from resume",
+  "contact_info": {{"email": "", "phone": "", "location": "", "linkedin": "", "github": "", "website": ""}},
   "estimated_ats_score": 0,
   "target_role": "{target_role}",
   "professional_summary": "",
-
   "skills": [],
-
   "experience": [
     {{
       "company": "",
       "role": "",
       "duration": "",
+      "location": "",
       "bullets": []
     }}
   ],
-
   "projects": [
     {{
       "name": "",
@@ -729,46 +506,36 @@ Use exactly this structure:
       "bullets": []
     }}
   ],
-
   "education": [
     {{
       "degree": "",
       "institution": "",
-      "duration": ""
+      "duration": "",
+      "grade": ""
     }}
   ],
-
   "certifications": [],
-
+  "achievements": [],
   "keywords": [],
-
   "improvements": [],
-
   "missing_keywords": []
 }}
 
-Keep the output concise.
-
 Return JSON only.
 """
-
 
     try:
 
         response = client.chat.completions.create(
             model=MODEL,
-
             messages=[
                 {
                     "role": "user",
                     "content": prompt,
                 }
             ],
-
             temperature=0.15,
-
-            max_completion_tokens=1800,
-
+            max_completion_tokens=2500,
             response_format={
                 "type": "json_object"
             },
@@ -780,280 +547,143 @@ Return JSON only.
             f"AI resume optimization failed: {exc}"
         ) from exc
 
-
     content = _get_message_content(
         response
     )
-
 
     result = _extract_json(
         content
     )
 
-
     # --------------------------------------------------------
     # ATS SCORE
     # --------------------------------------------------------
 
-    try:
-
-        ats_score = float(
-            result.get(
-                "estimated_ats_score",
-                0,
-            )
-        )
-
-    except (
-        TypeError,
-        ValueError,
-    ):
-
-        ats_score = 0
-
-
-    result["estimated_ats_score"] = int(
-        max(
-            0,
-            min(
-                100,
-                ats_score,
-            ),
-        )
+    raw_score = (
+        result.get("estimated_ats_score")
+        if result.get("estimated_ats_score") is not None
+        else result.get("ats_score")
+        if result.get("ats_score") is not None
+        else result.get("score")
     )
+    parsed_score = _parse_safe_score(raw_score)
+    result["estimated_ats_score"] = parsed_score if parsed_score is not None else 0
 
+    result["target_role"] = target_role
 
-    result["target_role"] = (
-        target_role
-    )
+    # --------------------------------------------------------
+    # Candidate Name & Contact Info
+    # --------------------------------------------------------
 
+    result["name"] = str(result.get("name", "")).strip()
+
+    raw_contact = result.get("contact_info")
+    if not isinstance(raw_contact, dict):
+        raw_contact = {}
+
+    result["contact_info"] = {
+        "email": str(raw_contact.get("email", "")).strip(),
+        "phone": str(raw_contact.get("phone", "")).strip(),
+        "location": str(raw_contact.get("location", "")).strip(),
+        "linkedin": str(raw_contact.get("linkedin", "")).strip(),
+        "github": str(raw_contact.get("github", "")).strip(),
+        "website": str(raw_contact.get("website", "")).strip(),
+    }
 
     # --------------------------------------------------------
     # Normalize simple lists
     # --------------------------------------------------------
 
-    result["skills"] = _safe_list(
-        result.get("skills")
-    )
-
-    result["certifications"] = _safe_list(
-        result.get("certifications")
-    )
-
-    result["keywords"] = _safe_list(
-        result.get("keywords")
-    )
-
-    result["improvements"] = _safe_list(
-        result.get("improvements")
-    )
-
-    result["missing_keywords"] = _safe_list(
-        result.get("missing_keywords")
-    )
-
+    result["skills"] = _safe_list(result.get("skills"))
+    result["certifications"] = _clean_bullet_list(result.get("certifications"))
+    result["achievements"] = _clean_bullet_list(result.get("achievements"))
+    result["keywords"] = _safe_list(result.get("keywords"))
+    result["improvements"] = _safe_list(result.get("improvements"))
+    result["missing_keywords"] = _safe_list(result.get("missing_keywords"))
 
     # --------------------------------------------------------
     # Professional summary
     # --------------------------------------------------------
 
     result["professional_summary"] = str(
-        result.get(
-            "professional_summary",
-            "",
-        )
+        result.get("professional_summary", result.get("summary", ""))
     ).strip()
-
 
     # --------------------------------------------------------
     # EXPERIENCE
     # --------------------------------------------------------
 
-    experience = result.get(
-        "experience",
-        [],
-    )
-
-    if not isinstance(
-        experience,
-        list,
-    ):
+    experience = result.get("experience", [])
+    if not isinstance(experience, list):
         experience = []
 
-
     clean_experience = []
-
-
     for item in experience:
-
-        if not isinstance(
-            item,
-            dict,
-        ):
+        if not isinstance(item, dict):
             continue
 
-
-        bullets = _safe_list(
-            item.get(
-                "bullets"
-            )
-        )
-
+        bullets = _clean_bullet_list(item.get("bullets"))
 
         clean_experience.append(
             {
-                "company": str(
-                    item.get(
-                        "company",
-                        "",
-                    )
-                ).strip(),
-
-                "role": str(
-                    item.get(
-                        "role",
-                        "",
-                    )
-                ).strip(),
-
-                "duration": str(
-                    item.get(
-                        "duration",
-                        "",
-                    )
-                ).strip(),
-
+                "company": str(item.get("company", "")).strip(),
+                "role": str(item.get("role", "")).strip(),
+                "duration": str(item.get("duration", "")).strip(),
+                "location": str(item.get("location", "")).strip(),
                 "bullets": bullets,
             }
         )
 
-
-    result["experience"] = (
-        clean_experience
-    )
-
+    result["experience"] = clean_experience
 
     # --------------------------------------------------------
     # PROJECTS
     # --------------------------------------------------------
 
-    projects = result.get(
-        "projects",
-        [],
-    )
-
-    if not isinstance(
-        projects,
-        list,
-    ):
+    projects = result.get("projects", [])
+    if not isinstance(projects, list):
         projects = []
 
-
     clean_projects = []
-
-
     for item in projects:
-
-        if not isinstance(
-            item,
-            dict,
-        ):
+        if not isinstance(item, dict):
             continue
 
-
-        technologies = _safe_list(
-            item.get(
-                "technologies"
-            )
-        )
-
-        bullets = _safe_list(
-            item.get(
-                "bullets"
-            )
-        )
-
+        technologies = _safe_list(item.get("technologies"))
+        bullets = _clean_bullet_list(item.get("bullets"))
 
         clean_projects.append(
             {
-                "name": str(
-                    item.get(
-                        "name",
-                        "",
-                    )
-                ).strip(),
-
-                "technologies": (
-                    technologies
-                ),
-
+                "name": str(item.get("name", "")).strip(),
+                "technologies": technologies,
                 "bullets": bullets,
             }
         )
 
-
-    result["projects"] = (
-        clean_projects
-    )
-
+    result["projects"] = clean_projects
 
     # --------------------------------------------------------
     # EDUCATION
     # --------------------------------------------------------
 
-    education = result.get(
-        "education",
-        [],
-    )
-
-    if not isinstance(
-        education,
-        list,
-    ):
+    education = result.get("education", [])
+    if not isinstance(education, list):
         education = []
 
-
     clean_education = []
-
-
     for item in education:
-
-        if not isinstance(
-            item,
-            dict,
-        ):
+        if not isinstance(item, dict):
             continue
-
 
         clean_education.append(
             {
-                "degree": str(
-                    item.get(
-                        "degree",
-                        "",
-                    )
-                ).strip(),
-
-                "institution": str(
-                    item.get(
-                        "institution",
-                        "",
-                    )
-                ).strip(),
-
-                "duration": str(
-                    item.get(
-                        "duration",
-                        "",
-                    )
-                ).strip(),
+                "degree": str(item.get("degree", "")).strip(),
+                "institution": str(item.get("institution", "")).strip(),
+                "duration": str(item.get("duration", "")).strip(),
+                "grade": str(item.get("grade", "")).strip(),
             }
         )
 
-
-    result["education"] = (
-        clean_education
-    )
-
+    result["education"] = clean_education
 
     return result

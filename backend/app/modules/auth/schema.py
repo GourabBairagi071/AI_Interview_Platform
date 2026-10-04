@@ -3,6 +3,8 @@ from uuid import UUID
 
 
 from pydantic import BaseModel, EmailStr, Field
+class GoogleAuthRequest(BaseModel):
+    credential: str
 
 class SignupRequest(BaseModel):
     full_name: str = Field(min_length=2, max_length=255)
@@ -15,6 +17,8 @@ class UserResponse(BaseModel):
     full_name: str | None
     email: str
     is_verified: bool
+    role: str = "CANDIDATE"
+    is_admin: bool = False
 
     model_config = {
         "from_attributes": True
@@ -67,6 +71,9 @@ class ProfileResponse(BaseModel):
     model_config = {
         "from_attributes": True
     }
+
+class GoogleAuthRequest(BaseModel):
+    credential: str
 
 
 class ProfileUpdateRequest(BaseModel):
