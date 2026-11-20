@@ -19,6 +19,8 @@ export const AdminResources: React.FC = () => {
   const [formData, setFormData] = useState({
     title: "",
     topic: "System Design",
+    canonical_skill: "System Design",
+    difficulty: "Intermediate",
     resource_type: "article",
     url: "",
     description: "",
@@ -63,6 +65,8 @@ export const AdminResources: React.FC = () => {
     setFormData({
       title: "",
       topic: "System Design",
+      canonical_skill: "System Design",
+      difficulty: "Intermediate",
       resource_type: "article",
       url: "",
       description: "",
@@ -75,6 +79,8 @@ export const AdminResources: React.FC = () => {
     setFormData({
       title: r.title,
       topic: r.topic || "General",
+      canonical_skill: r.canonical_skill || r.topic || "General",
+      difficulty: r.difficulty || "Intermediate",
       resource_type: r.resource_type || "article",
       url: r.url || "",
       description: r.description || "",
@@ -89,12 +95,22 @@ export const AdminResources: React.FC = () => {
       return
     }
 
+    const payload = {
+      title: formData.title.trim(),
+      description: formData.description.trim() || formData.title.trim(),
+      topic: formData.topic.trim() || "General",
+      canonical_skill: formData.canonical_skill?.trim() || formData.topic.trim() || "General",
+      difficulty: formData.difficulty || "Intermediate",
+      resource_type: formData.resource_type || "Documentation",
+      url: formData.url.trim() || undefined,
+    }
+
     try {
       setSaving(true)
       if (editingItem) {
-        await adminApi.updateResource(editingItem.id, formData)
+        await adminApi.updateResource(editingItem.id, payload)
       } else {
-        await adminApi.createResource(formData)
+        await adminApi.createResource(payload)
       }
       setFormOpen(false)
       loadResources()
@@ -221,6 +237,24 @@ export const AdminResources: React.FC = () => {
             Filter
           </button>
         </form>
+
+        <div style={{ display: "flex", gap: "0.75rem" }}>
+          <select
+            value={topicFilter}
+            onChange={(e) => {
+              setTopicFilter(e.target.value)
+              setPage(1)
+            }}
+            className="admin-select"
+          >
+            <option value="">All Topics</option>
+            <option value="System Design">System Design</option>
+            <option value="Algorithms">Algorithms</option>
+            <option value="Data Structures">Data Structures</option>
+            <option value="Databases">Databases</option>
+            <option value="Behavioral">Behavioral</option>
+          </select>
+        </div>
       </div>
 
       <AdminTable
@@ -278,7 +312,7 @@ export const AdminResources: React.FC = () => {
               />
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", marginBottom: "1rem" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "1rem", marginBottom: "1rem" }}>
               <div>
                 <label style={{ display: "block", fontSize: "0.8rem", color: "#94a3b8", marginBottom: "0.3rem" }}>
                   Topic Domain
@@ -287,7 +321,20 @@ export const AdminResources: React.FC = () => {
                   type="text"
                   required
                   value={formData.topic}
-                  onChange={(e) => setFormData({ ...formData, topic: e.target.value })}
+                  onChange={(e) => setFormData({ ...formData, topic: e.target.value, canonical_skill: e.target.value })}
+                  className="admin-input"
+                  style={{ width: "100%" }}
+                />
+              </div>
+              <div>
+                <label style={{ display: "block", fontSize: "0.8rem", color: "#94a3b8", marginBottom: "0.3rem" }}>
+                  Canonical Skill
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={formData.canonical_skill || formData.topic}
+                  onChange={(e) => setFormData({ ...formData, canonical_skill: e.target.value })}
                   className="admin-input"
                   style={{ width: "100%" }}
                 />
@@ -302,6 +349,7 @@ export const AdminResources: React.FC = () => {
                   className="admin-select"
                   style={{ width: "100%" }}
                 >
+                  <option value="Documentation">Documentation</option>
                   <option value="article">Article / Guide</option>
                   <option value="video">Video Course</option>
                   <option value="cheatsheet">Cheat Sheet</option>
@@ -373,3 +421,4 @@ export const AdminResources: React.FC = () => {
   )
 }
 export default AdminResources
+

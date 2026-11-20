@@ -15,10 +15,18 @@ class Settings(BaseSettings):
     # Redis (optional — falls back to InMemoryEventPublisher if absent)
     redis_url: str = ""
 
+    # Email / SMTP (optional — falls back to simulated email delivery if absent)
+    email_provider: str = "smtp"
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_username: str = ""
+    smtp_password: str = ""
+    email_from: str = "noreply@interviewplatform.ai"
+
     model_config = SettingsConfigDict(
         env_file=".env",
         extra="ignore",
     )
 
 
-settings = Settings()
+settings = Settings()

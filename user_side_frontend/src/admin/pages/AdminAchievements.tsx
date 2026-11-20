@@ -36,14 +36,28 @@ export const AdminAchievements: React.FC = () => {
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!formData.name.trim() || !formData.title.trim()) {
-      alert("Name and Title are required.")
+    const rawName = formData.name.trim() || formData.title.trim()
+    if (!rawName) {
+      alert("Name / Title is required.")
       return
+    }
+
+    const achievementId = rawName.toLowerCase().replace(/[^a-z0-9]/g, "_")
+    const payload = {
+      id: achievementId,
+      name: formData.title.trim() || rawName,
+      description: formData.description.trim() || `Unlocked ${formData.title || rawName}`,
+      category: formData.category || "INTERVIEW",
+      icon: formData.badge_icon || "trophy",
+      rarity: "Common",
+      xp_reward: Number(formData.points || 50),
+      target_value: 1,
+      is_active: true,
     }
 
     try {
       setSaving(true)
-      await adminApi.createAchievement(formData)
+      await adminApi.createAchievement(payload)
       setFormOpen(false)
       loadAchievements()
     } catch (err: any) {

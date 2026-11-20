@@ -1,0 +1,21 @@
+{
+  "build_verification": {
+    "status": "VERIFIED",
+    "exit_code": 0,
+    "stdout_snippet": "\u001b[36mvite v8.2.2 \u001b[32mbuilding client environment for production...\u001b[36m\u001b[39m\ntransforming...\n\u00e2\u0153\u201c 142 modules transformed.\nrendering chunks...\ncomputing gzip size...\ndist/index.html                   0.55 kB \u00e2\u201d\u201a gzip:   0.34 kB\ndist/assets/index-v7X5NHiF.css  318.02 kB \u00e2\u201d\u201a gzip:  53.53 kB\ndist/asset",
+    "stderr_snippet": "$ tsc -b && vite build\n\u001b[33m[plugin builtin:vite-reporter] \n(!) Some chunks are larger than 500 kB after minification. Consider:\n- Using dynamic import() to code-split the application\n- Use build.rolldownOptions.output.codeSplitting to improve chunking: https://rolldown.rs/reference/OutputOptions.co"
+  },
+  "lint_verification": {
+    "status": "VERIFIED",
+    "exit_code": 0,
+    "stdout_snippet": "\n  ! eslint(no-unused-vars): Catch parameter 'err' is caught but never used.\n     ,-[src/services/websocket.ts:173:16]\n 172 |         this.ws.close()\n 173 |       } catch (err) {\n     :                ^|^\n     :                 `-- 'err' is declared here\n 174 |         // Ignored\n     `----\n  help: ",
+    "stderr_snippet": "$ oxlint\n"
+  },
+  "admin_routes_count": 26,
+  "candidate_routes_count": 27,
+  "assignment_ui_components": [
+    "AdminAssignments.tsx (Admin Hub, Analytics, Filter, Target Selector, Recipient Drawer)",
+    "AssignedTasksWidget.tsx (Candidate Tasks Widget, Priority Badges, Status Badges, Direct Launchers, Submission Modal)"
+  ],
+  "runtime_console_errors": 0
+}

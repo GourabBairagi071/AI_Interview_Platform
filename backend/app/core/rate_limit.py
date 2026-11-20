@@ -46,6 +46,9 @@ class InMemoryRateLimiter:
 # Global instances for key domains
 login_rate_limiter = InMemoryRateLimiter(requests_per_minute=30)
 api_rate_limiter = InMemoryRateLimiter(requests_per_minute=300)
+forgot_password_rate_limiter = InMemoryRateLimiter(requests_per_minute=10)
+verify_otp_rate_limiter = InMemoryRateLimiter(requests_per_minute=20)
+reset_password_rate_limiter = InMemoryRateLimiter(requests_per_minute=10)
 
 
 def limit_login_attempts(request: Request):
@@ -61,3 +64,37 @@ def limit_login_attempts(request: Request):
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="Too many login attempts. Please wait a minute and try again.",
         )
+
+
+def limit_forgot_password_attempts(request: Request):
+    client_ip = request.client.host if request.client else "unknown"
+    max_attempts = 200 if client_ip in ("127.0.0.1", "localhost", "::1") else 5
+
+    if not forgot_password_rate_limiter.check(f"forgot:{client_ip}", max_requests=max_attempts):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many password reset requests. Please wait a minute and try again.",
+        )
+
+
+def limit_verify_otp_attempts(request: Request):
+    client_ip = request.client.host if request.client else "unknown"
+    max_attempts = 200 if client_ip in ("127.0.0.1", "localhost", "::1") else 10
+
+    if not verify_otp_rate_limiter.check(f"verify_otp:{client_ip}", max_requests=max_attempts):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many OTP verification attempts. Please wait a minute and try again.",
+        )
+
+
+def limit_reset_password_attempts(request: Request):
+    client_ip = request.client.host if request.client else "unknown"
+    max_attempts = 200 if client_ip in ("127.0.0.1", "localhost", "::1") else 5
+
+    if not reset_password_rate_limiter.check(f"reset_pwd:{client_ip}", max_requests=max_attempts):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many password reset attempts. Please wait a minute and try again.",
+        )
+

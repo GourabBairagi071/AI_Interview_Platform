@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, Query
+from uuid import UUID
+from fastapi import APIRouter, Body, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -18,6 +19,8 @@ from app.modules.practice.schema import (
 )
 from app.modules.practice.service import (
     bookmark_practice_question,
+    get_candidate_practice_set_attempts,
+    get_candidate_practice_set_detail,
     get_practice_question_detail,
     get_practice_questions_list,
     get_technologies_summary,
@@ -25,7 +28,9 @@ from app.modules.practice.service import (
     get_user_practice_history,
     get_user_practice_progress,
     get_user_practice_stats,
+    list_candidate_practice_sets,
     solve_practice_question,
+    submit_candidate_practice_set,
 )
 
 router = APIRouter(
@@ -205,3 +210,84 @@ async def unbookmark_question(
         question_id=question_id,
         bookmarked=False,
     )
+
+
+# -------------------------------------------------------------
+# Practice Sets / Mock Tests (Candidate Access)
+# -------------------------------------------------------------
+@router.get(
+    "/sets",
+    summary="List available mock practice sets",
+)
+async def list_practice_sets(
+    topic: str | None = Query(default=None),
+    difficulty: str | None = Query(default=None),
+    search: str | None = Query(default=None),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    return await list_candidate_practice_sets(
+        db=db,
+        user_id=current_user.id,
+        topic=topic,
+        difficulty=difficulty,
+        search=search,
+        page=page,
+        page_size=page_size,
+    )
+
+
+@router.get(
+    "/sets/{set_id}",
+    summary="Get practice set details and questions",
+)
+async def get_practice_set_detail(
+    set_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    return await get_candidate_practice_set_detail(
+        db=db,
+        user_id=current_user.id,
+        set_id=set_id,
+    )
+
+
+@router.post(
+    "/sets/{set_id}/submit",
+    summary="Submit answers for a practice set and compute score",
+)
+async def submit_practice_set(
+    set_id: UUID,
+    payload: dict = Body(default_factory=dict),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    answers = payload.get("answers", {})
+    duration_seconds = payload.get("duration_seconds", 0)
+    return await submit_candidate_practice_set(
+        db=db,
+        user_id=current_user.id,
+        set_id=set_id,
+        answers=answers,
+        duration_seconds=duration_seconds,
+    )
+
+
+@router.get(
+    "/sets/{set_id}/attempts",
+    summary="Get user attempt history for a practice set",
+)
+async def get_practice_set_attempts(
+    set_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    return await get_candidate_practice_set_attempts(
+        db=db,
+        user_id=current_user.id,
+        set_id=set_id,
+    )
+

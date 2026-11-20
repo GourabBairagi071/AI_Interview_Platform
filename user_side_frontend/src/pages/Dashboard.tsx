@@ -17,6 +17,8 @@ import {
   getWeakTopics,
   getDailyPracticePlan,
   toggleDailyPracticeTask,
+  getCandidateDashboardConfig,
+  getCandidateFeaturedContent,
   type NotificationItem,
   type PracticeStatsResponse,
   type UserCodingStats,
@@ -26,6 +28,7 @@ import {
 import { realtimeService } from "../services/websocket"
 import { useWebSocketEvent } from "../hooks/useWebSocket"
 import RealtimeStatusBadge from "../components/RealtimeStatusBadge"
+import { AssignedTasksWidget } from "../components/dashboard/AssignedTasksWidget"
 
 import "./Dashboard.css"
 
@@ -86,6 +89,25 @@ function Dashboard() {
   const [search, setSearch] = useState("")
   const [activePeriod, setActivePeriod] = useState<"5" | "10" | "all">("10")
   const [showAllSessions, setShowAllSessions] = useState(false)
+  const [dashboardConfig, setDashboardConfig] = useState<Record<string, boolean>>({
+    show_welcome: true,
+    show_readiness: true,
+    show_ats: true,
+    show_interview: true,
+    show_weak_topics: true,
+    show_daily_practice: true,
+    show_contests: true,
+    show_practice: true,
+    show_learning: true,
+    show_resources: true,
+    show_coding: true,
+    show_achievements: true,
+    show_subscription: true,
+    show_notifications: true,
+    show_support: true,
+    show_companies: true,
+  })
+  const [featuredContent, setFeaturedContent] = useState<any>(null)
 
   const profileRef = useRef<HTMLDivElement | null>(null)
   const notificationRef = useRef<HTMLDivElement | null>(null)
@@ -160,7 +182,7 @@ function Dashboard() {
     setError("")
 
     try {
-      const [userResponse, interviewResponse, statsData, notifList, unreadData, codingStatsData, weakTopicsData, dailyPlanData] = await Promise.all([
+      const [userResponse, interviewResponse, statsData, notifList, unreadData, codingStatsData, weakTopicsData, dailyPlanData, configData, featuredData] = await Promise.all([
         apiRequest("/auth/me"),
         apiRequest("/interview"),
         getPracticeStats().catch(() => null),
@@ -169,7 +191,17 @@ function Dashboard() {
         getUserCodingStats().catch(() => null),
         getWeakTopics().catch(() => []),
         getDailyPracticePlan().catch(() => null),
+        getCandidateDashboardConfig().catch(() => null),
+        getCandidateFeaturedContent().catch(() => null),
       ])
+
+      if (configData) {
+        setDashboardConfig(configData)
+      }
+
+      if (featuredData) {
+        setFeaturedContent(featuredData)
+      }
 
       if (statsData) {
         setPracticeStats(statsData)
@@ -1289,9 +1321,87 @@ function Dashboard() {
           </section>
 
           {/* ==================================================
+              FEATURED SPOTLIGHTS (FEATURE 15 ADMIN CONTROLLED)
+          ================================================== */}
+          {featuredContent && (featuredContent.contest || featuredContent.practice_set || featuredContent.coding_problem || featuredContent.company) && (
+            <section className="featured-spotlights-section" style={{ marginBottom: "2rem" }}>
+              <div className="section-heading" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
+                <div>
+                  <span className="panel-badge" style={{ background: "rgba(99, 102, 241, 0.15)", color: "#818cf8" }}>ADMIN SPOTLIGHT</span>
+                  <h2 style={{ fontSize: "1.25rem", fontWeight: 700, margin: "0.25rem 0", color: "#f8fafc" }}>Featured Preparation Highlights</h2>
+                  <p style={{ fontSize: "0.875rem", color: "#94a3b8", margin: 0 }}>Handpicked live contests, mock practice sets, and verified challenges</p>
+                </div>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "1rem" }}>
+                {featuredContent.contest && dashboardConfig.show_contests !== false && (
+                  <div className="panel" style={{ padding: "1.25rem", borderLeft: "4px solid #f59e0b", background: "rgba(30, 41, 59, 0.7)" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
+                      <span style={{ fontSize: "0.75rem", fontWeight: 700, color: "#f59e0b", letterSpacing: "0.05em" }}>FEATURED CONTEST</span>
+                      <span className="live-status-pill" style={{ fontSize: "0.7rem", padding: "0.15rem 0.5rem" }}>{featuredContent.contest.status}</span>
+                    </div>
+                    <h3 style={{ fontSize: "1.05rem", fontWeight: 600, margin: "0 0 0.5rem 0", color: "#f8fafc" }}>{featuredContent.contest.title}</h3>
+                    <p style={{ fontSize: "0.85rem", color: "#94a3b8", margin: "0 0 1rem 0" }}>Competitive timed coding contest. Benchmark algorithmic speed & correctness.</p>
+                    <button type="button" className="action-card-button" onClick={() => navigate(`/contests/${featuredContent.contest.slug || featuredContent.contest.id}`)}>
+                      Join Contest Arena →
+                    </button>
+                  </div>
+                )}
+
+                {featuredContent.practice_set && dashboardConfig.show_practice !== false && (
+                  <div className="panel" style={{ padding: "1.25rem", borderLeft: "4px solid #3b82f6", background: "rgba(30, 41, 59, 0.7)" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
+                      <span style={{ fontSize: "0.75rem", fontWeight: 700, color: "#60a5fa", letterSpacing: "0.05em" }}>RECOMMENDED PRACTICE</span>
+                      <span style={{ fontSize: "0.75rem", color: "#94a3b8" }}>{featuredContent.practice_set.duration_minutes} mins</span>
+                    </div>
+                    <h3 style={{ fontSize: "1.05rem", fontWeight: 600, margin: "0 0 0.5rem 0", color: "#f8fafc" }}>{featuredContent.practice_set.title}</h3>
+                    <p style={{ fontSize: "0.85rem", color: "#94a3b8", margin: "0 0 1rem 0" }}>Topic: {featuredContent.practice_set.topic} • {featuredContent.practice_set.difficulty}</p>
+                    <button type="button" className="action-card-button" onClick={() => navigate("/practice")}>
+                      Start Practice Set →
+                    </button>
+                  </div>
+                )}
+
+                {featuredContent.coding_problem && dashboardConfig.show_coding !== false && (
+                  <div className="panel" style={{ padding: "1.25rem", borderLeft: "4px solid #10b981", background: "rgba(30, 41, 59, 0.7)" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
+                      <span style={{ fontSize: "0.75rem", fontWeight: 700, color: "#34d399", letterSpacing: "0.05em" }}>CODING CHALLENGE</span>
+                      <span style={{ fontSize: "0.75rem", color: "#10b981", fontWeight: 600 }}>{featuredContent.coding_problem.difficulty}</span>
+                    </div>
+                    <h3 style={{ fontSize: "1.05rem", fontWeight: 600, margin: "0 0 0.5rem 0", color: "#f8fafc" }}>{featuredContent.coding_problem.title}</h3>
+                    <p style={{ fontSize: "0.85rem", color: "#94a3b8", margin: "0 0 1rem 0" }}>Category: {featuredContent.coding_problem.topic}</p>
+                    <button type="button" className="action-card-button" onClick={() => navigate("/coding")}>
+                      Solve Problem →
+                    </button>
+                  </div>
+                )}
+
+                {featuredContent.company && dashboardConfig.show_companies !== false && (
+                  <div className="panel" style={{ padding: "1.25rem", borderLeft: "4px solid #8b5cf6", background: "rgba(30, 41, 59, 0.7)" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
+                      <span style={{ fontSize: "0.75rem", fontWeight: 700, color: "#a78bfa", letterSpacing: "0.05em" }}>COMPANY PREP</span>
+                      <span style={{ fontSize: "0.75rem", color: "#94a3b8" }}>{featuredContent.company.industry}</span>
+                    </div>
+                    <h3 style={{ fontSize: "1.05rem", fontWeight: 600, margin: "0 0 0.5rem 0", color: "#f8fafc" }}>{featuredContent.company.name}</h3>
+                    <p style={{ fontSize: "0.85rem", color: "#94a3b8", margin: "0 0 1rem 0" }}>Interview patterns, topics, and FAQs.</p>
+                    <button type="button" className="action-card-button" onClick={() => navigate("/practice")}>
+                      View Company Pack →
+                    </button>
+                  </div>
+                )}
+              </div>
+            </section>
+          )}
+
+          {/* ==================================================
+              ASSIGNED TASKS & DIRECTED CHALLENGES (PHASE 20)
+          ================================================== */}
+          <AssignedTasksWidget />
+
+          {/* ==================================================
               C & H. UPCOMING / ACTIVE + AI RECOMMENDATION
           ================================================== */}
-          <section className="two-column-action-grid">
+          {dashboardConfig.show_interview !== false && (
+            <section className="two-column-action-grid">
             {/* C. UPCOMING / ACTIVE INTERVIEW */}
             <div className="panel action-panel">
               <div className="panel-header">
@@ -1376,6 +1486,7 @@ function Dashboard() {
               </div>
             </div>
           </section>
+          )}
 
           {/* ==================================================
               PRACTICE MISSIONS & TOPIC MASTERY (TASK 6 ARCHITECTURE)

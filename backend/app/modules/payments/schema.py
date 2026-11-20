@@ -18,8 +18,8 @@ class PlanResponse(BaseModel):
     billing_interval: str
     duration_days: int
     is_active: bool
-    features: dict | None
-    limits: dict | None
+    features: dict | list | None = None
+    limits: dict | list | None = None
     sort_order: int
 
     model_config = {"from_attributes": True}

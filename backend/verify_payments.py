@@ -98,11 +98,15 @@ async def test_payments_system():
         print("[OK] 8. Create Order Validation: Correctly rejected amount < 100 paise with 400")
 
         # 9. Test POST /api/create-order - Real Razorpay API Order Creation
-        r_order = await client.post(
-            "/api/create-order",
-            headers=headers,
-            json={"amount": 50000, "currency": "INR", "receipt": "test_order_101"}
-        )
+        for attempt in range(4):
+            r_order = await client.post(
+                "/api/create-order",
+                headers=headers,
+                json={"amount": 50000, "currency": "INR", "receipt": f"test_order_{attempt}"}
+            )
+            if r_order.status_code == 200:
+                break
+            await asyncio.sleep(2.0)
         assert r_order.status_code == 200, f"Failed /api/create-order: {r_order.status_code} - {r_order.text}"
         order_res = r_order.json()
         print(f"[OK] 9. Razorpay API Create Order: Generated Order ID={order_res['order_id']}, Amount=Rs.{order_res['amount']/100}")

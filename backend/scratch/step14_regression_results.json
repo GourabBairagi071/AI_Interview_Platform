@@ -1,0 +1,32 @@
+{
+  "regression_results": {
+    "1_authentication_login": true,
+    "2_candidate_profile": true,
+    "3_candidate_dashboard_config": true,
+    "4_candidate_dashboard_featured": true,
+    "5_coding_problems_candidate": true,
+    "6_contests_candidate": true,
+    "7_question_practice_candidate": true,
+    "8_learning_resources": true,
+    "9_support_tickets": true,
+    "10_notifications": true,
+    "11_admin_users": true,
+    "12_admin_interviews": true,
+    "13_admin_questions": true,
+    "14_admin_companies": true,
+    "15_admin_resources": true,
+    "16_admin_subscription_plans": true,
+    "17_admin_payments": true,
+    "18_admin_coupons": true,
+    "19_admin_invoices": true,
+    "20_admin_achievements": true,
+    "21_admin_audit_logs": true,
+    "22_admin_rbac_roles": true,
+    "23_admin_assignments": true,
+    "24_candidate_assignments": true
+  },
+  "total_checks": 24,
+  "passed_checks": 24,
+  "failed_checks": 0,
+  "status": "VERIFIED"
+}

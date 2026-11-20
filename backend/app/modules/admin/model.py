@@ -187,6 +187,42 @@ class Company(Base):
         index=True,
     )
 
+    is_featured: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        nullable=False,
+    )
+
+    interview_patterns: Mapped[list | None] = mapped_column(
+        JSONB,
+        default=list,
+        nullable=True,
+    )
+
+    technical_topics: Mapped[list | None] = mapped_column(
+        JSONB,
+        default=list,
+        nullable=True,
+    )
+
+    hr_topics: Mapped[list | None] = mapped_column(
+        JSONB,
+        default=list,
+        nullable=True,
+    )
+
+    coding_topics: Mapped[list | None] = mapped_column(
+        JSONB,
+        default=list,
+        nullable=True,
+    )
+
+    faqs: Mapped[list | None] = mapped_column(
+        JSONB,
+        default=list,
+        nullable=True,
+    )
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
@@ -262,6 +298,29 @@ class AIAgentConfig(Base):
         nullable=False,
     )
 
+    fallback_model: Mapped[str | None] = mapped_column(
+        String(100),
+        default="gemini-1.5-flash",
+        nullable=True,
+    )
+
+    rag_enabled: Mapped[bool] = mapped_column(
+        Boolean,
+        default=True,
+        nullable=False,
+    )
+
+    knowledge_scope: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+    )
+
+    evaluation_criteria: Mapped[dict | None] = mapped_column(
+        JSONB,
+        default=dict,
+        nullable=True,
+    )
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
@@ -313,3 +372,139 @@ class AdminRole(Base):
         onupdate=func.now(),
         nullable=False,
     )
+
+
+class InterviewConfiguration(Base):
+    __tablename__ = "interview_configurations"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+
+    title: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+    )
+
+    slug: Mapped[str] = mapped_column(
+        String(255),
+        unique=True,
+        nullable=False,
+        index=True,
+    )
+
+    category: Mapped[str] = mapped_column(
+        String(50),
+        default="Technical",
+        nullable=False,
+    )  # Technical, HR, Company-specific, System Design
+
+    target_role: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False,
+    )
+
+    company_name: Mapped[str | None] = mapped_column(
+        String(100),
+        nullable=True,
+    )
+
+    difficulty: Mapped[str] = mapped_column(
+        String(50),
+        default="Medium",
+        nullable=False,
+    )
+
+    question_count: Mapped[int] = mapped_column(
+        Integer,
+        default=5,
+        nullable=False,
+    )
+
+    duration_minutes: Mapped[int] = mapped_column(
+        Integer,
+        default=30,
+        nullable=False,
+    )
+
+    skill_coverage: Mapped[list] = mapped_column(
+        JSONB,
+        default=list,
+        nullable=False,
+    )
+
+    question_selection_mode: Mapped[str] = mapped_column(
+        String(50),
+        default="adaptive",
+        nullable=False,
+    )  # adaptive, curated, random
+
+    evaluation_criteria: Mapped[dict] = mapped_column(
+        JSONB,
+        default=dict,
+        nullable=False,
+    )
+
+    scoring_weights: Mapped[dict] = mapped_column(
+        JSONB,
+        default=dict,
+        nullable=False,
+    )
+
+    feedback_rules: Mapped[dict] = mapped_column(
+        JSONB,
+        default=dict,
+        nullable=False,
+    )
+
+    ai_agent_key: Mapped[str | None] = mapped_column(
+        String(100),
+        default="technical_interviewer",
+        nullable=True,
+    )
+
+    rag_enabled: Mapped[bool] = mapped_column(
+        Boolean,
+        default=True,
+        nullable=False,
+    )
+
+    voice_enabled: Mapped[bool] = mapped_column(
+        Boolean,
+        default=True,
+        nullable=False,
+    )
+
+    anti_cheating_required: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        nullable=False,
+    )
+
+    is_active: Mapped[bool] = mapped_column(
+        Boolean,
+        default=True,
+        nullable=False,
+    )
+
+    is_featured: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        nullable=False,
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+

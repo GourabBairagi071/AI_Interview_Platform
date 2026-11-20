@@ -49,6 +49,20 @@ from app.modules.admin.schema import (
     UpdateSystemSettingRequest,
     UpdateUserRoleRequest,
     UpdateUserStatusRequest,
+    CreateContestRequest,
+    UpdateContestRequest,
+    AddContestProblemRequest,
+    CreateCodingProblemRequest,
+    UpdateCodingProblemRequest,
+    CreatePracticeSetRequest,
+    UpdatePracticeSetRequest,
+    AddPracticeSetQuestionRequest,
+    CreateInterviewConfigRequest,
+    UpdateInterviewConfigRequest,
+    CreateCareerRoadmapRequest,
+    UpdateCareerRoadmapRequest,
+    Candidate360Response,
+    DashboardConfigSchema,
 )
 from app.modules.admin.service import AdminService
 from app.modules.support.service import (
@@ -307,7 +321,7 @@ async def get_coding_problems(
     if search:
         query = query.where(CodingProblem.title.ilike(f"%{search.strip()}%"))
 
-    count_query = select(func.count(CodingProblem.id)).select_from(query.subquery())
+    count_query = select(func.count()).select_from(query.subquery())
     total = (await db.execute(count_query)).scalar() or 0
 
     query = query.order_by(CodingProblem.id.asc())
@@ -317,12 +331,12 @@ async def get_coding_problems(
     rows = (await db.execute(query)).scalars().all()
     problems = [
         {
-            "id": p.id,
+            "id": str(p.id),
             "title": p.title,
-            "difficulty": p.difficulty,
-            "topic": p.topic,
-            "acceptance_rate": p.acceptance_rate,
-            "is_active": getattr(p, "is_active", True),
+            "difficulty": getattr(p, "difficulty", "Medium"),
+            "topic": getattr(p, "topic", "General"),
+            "acceptance_rate": 0.0,
+            "is_active": getattr(p, "is_published", True),
         }
         for p in rows
     ]
@@ -338,19 +352,23 @@ async def get_coding_problem_detail(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("questions.view")),
 ):
-    res = await db.execute(select(CodingProblem).where(CodingProblem.id == problem_id))
+    try:
+        p_uuid = uuid.UUID(problem_id)
+        res = await db.execute(select(CodingProblem).where(CodingProblem.id == p_uuid))
+    except (ValueError, TypeError):
+        res = await db.execute(select(CodingProblem).where(CodingProblem.slug == problem_id))
     problem = res.scalar_one_or_none()
     if not problem:
         raise HTTPException(status_code=404, detail="Coding problem not found")
     return {
-        "id": problem.id,
+        "id": str(problem.id),
         "title": problem.title,
         "difficulty": problem.difficulty,
         "topic": problem.topic,
         "description": problem.description,
         "starter_code": problem.starter_code,
         "test_cases": problem.test_cases,
-        "solution": problem.solution,
+        "solution": getattr(problem, "solution_code", None) or getattr(problem, "editorial", None),
     }
 
 
@@ -982,7 +1000,479 @@ async def get_contests(
             "end_time": c.end_time,
             "duration_minutes": c.duration_minutes,
             "participant_count": getattr(c, "max_participants", 0) or 0,
+            "is_featured": getattr(c, "is_featured", False),
         }
         for c in rows
     ]
     return {"contests": contests, "total": total, "page": page, "page_size": page_size}
+
+
+@router.post(
+    "/contests",
+    summary="Create competitive coding contest",
+)
+async def create_contest(
+    data: CreateContestRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("contests.manage")),
+):
+    contest = await AdminService.create_contest(db, data, actor=current_user)
+    return contest
+
+
+@router.get(
+    "/contests/{contest_id}",
+    summary="Get contest details for admin",
+)
+async def get_contest_detail_admin(
+    contest_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("contests.view")),
+):
+    res = await db.execute(select(Contest).where(Contest.id == contest_id))
+    c = res.scalar_one_or_none()
+    if not c:
+        raise HTTPException(status_code=404, detail="Contest not found")
+    return c
+
+
+@router.put(
+    "/contests/{contest_id}",
+    summary="Update contest details and schedule",
+)
+async def update_contest(
+    contest_id: uuid.UUID,
+    data: UpdateContestRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("contests.manage")),
+):
+    contest = await AdminService.update_contest(db, contest_id, data, actor=current_user)
+    if not contest:
+        raise HTTPException(status_code=404, detail="Contest not found")
+    return contest
+
+
+@router.delete(
+    "/contests/{contest_id}",
+    summary="Archive/Delete contest",
+)
+async def delete_contest(
+    contest_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("contests.manage")),
+):
+    success = await AdminService.delete_contest(db, contest_id, actor=current_user)
+    if not success:
+        raise HTTPException(status_code=404, detail="Contest not found")
+    return {"message": "Contest archived successfully"}
+
+
+@router.post(
+    "/contests/{contest_id}/problems",
+    summary="Add coding problem to contest",
+)
+async def add_contest_problem(
+    contest_id: uuid.UUID,
+    data: AddContestProblemRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("contests.manage")),
+):
+    cp = await AdminService.add_contest_problem(db, contest_id, data, actor=current_user)
+    return cp
+
+
+@router.delete(
+    "/contests/{contest_id}/problems/{problem_id}",
+    summary="Remove coding problem from contest",
+)
+async def remove_contest_problem(
+    contest_id: uuid.UUID,
+    problem_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("contests.manage")),
+):
+    success = await AdminService.remove_contest_problem(db, contest_id, problem_id, actor=current_user)
+    if not success:
+        raise HTTPException(status_code=404, detail="Contest problem link not found")
+    return {"message": "Problem removed from contest successfully"}
+
+
+@router.get(
+    "/contests/{contest_id}/registrations",
+    summary="View contest registrations list",
+)
+async def get_contest_registrations(
+    contest_id: uuid.UUID,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("contests.view")),
+):
+    return await AdminService.get_contest_registrations(db, contest_id, page=page, page_size=page_size)
+
+
+# ============================================================
+# 18. CODING PROBLEMS MANAGEMENT (FEATURE 07)
+# ============================================================
+@router.post(
+    "/coding/problems",
+    summary="Create coding problem with test cases and editorial",
+)
+async def create_coding_problem(
+    data: CreateCodingProblemRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("coding.manage")),
+):
+    prob = await AdminService.create_coding_problem(db, data, actor=current_user)
+    return prob
+
+
+@router.put(
+    "/coding/problems/{problem_id}",
+    summary="Update coding problem specifications",
+)
+async def update_coding_problem(
+    problem_id: uuid.UUID,
+    data: UpdateCodingProblemRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("coding.manage")),
+):
+    prob = await AdminService.update_coding_problem(db, problem_id, data, actor=current_user)
+    if not prob:
+        raise HTTPException(status_code=404, detail="Coding problem not found")
+    return prob
+
+
+@router.delete(
+    "/coding/problems/{problem_id}",
+    summary="Archive coding problem",
+)
+async def delete_coding_problem(
+    problem_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("coding.manage")),
+):
+    success = await AdminService.delete_coding_problem(db, problem_id, actor=current_user)
+    if not success:
+        raise HTTPException(status_code=404, detail="Coding problem not found")
+    return {"message": "Coding problem archived successfully"}
+
+
+# ============================================================
+# 19. PRACTICE SETS / MOCK TESTS MANAGEMENT (FEATURE 08)
+# ============================================================
+@router.get(
+    "/practice-sets",
+    summary="List practice sets",
+)
+async def list_practice_sets(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    topic: str | None = None,
+    difficulty: str | None = None,
+    search: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("practice_sets.manage")),
+):
+    return await AdminService.list_practice_sets(
+        db, page=page, page_size=page_size, topic=topic, difficulty=difficulty, search=search
+    )
+
+
+@router.post(
+    "/practice-sets",
+    summary="Create practice set",
+)
+async def create_practice_set(
+    data: CreatePracticeSetRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("practice_sets.manage")),
+):
+    ps = await AdminService.create_practice_set(db, data, actor=current_user)
+    return ps
+
+
+@router.get(
+    "/practice-sets/{set_id}",
+    summary="Get practice set details",
+)
+async def get_practice_set(
+    set_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("practice_sets.manage")),
+):
+    ps = await AdminService.get_practice_set(db, set_id)
+    if not ps:
+        raise HTTPException(status_code=404, detail="Practice set not found")
+    return ps
+
+
+@router.put(
+    "/practice-sets/{set_id}",
+    summary="Update practice set",
+)
+async def update_practice_set(
+    set_id: uuid.UUID,
+    data: UpdatePracticeSetRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("practice_sets.manage")),
+):
+    ps = await AdminService.update_practice_set(db, set_id, data, actor=current_user)
+    if not ps:
+        raise HTTPException(status_code=404, detail="Practice set not found")
+    return ps
+
+
+@router.delete(
+    "/practice-sets/{set_id}",
+    summary="Archive practice set",
+)
+async def delete_practice_set(
+    set_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("practice_sets.manage")),
+):
+    success = await AdminService.delete_practice_set(db, set_id, actor=current_user)
+    if not success:
+        raise HTTPException(status_code=404, detail="Practice set not found")
+    return {"message": "Practice set archived successfully"}
+
+
+@router.post(
+    "/practice-sets/{set_id}/questions",
+    summary="Add question to practice set",
+)
+async def add_practice_set_question(
+    set_id: uuid.UUID,
+    data: AddPracticeSetQuestionRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("practice_sets.manage")),
+):
+    psq = await AdminService.add_practice_set_question(db, set_id, data, actor=current_user)
+    return psq
+
+
+@router.delete(
+    "/practice-sets/{set_id}/questions/{question_id}",
+    summary="Remove question from practice set",
+)
+async def remove_practice_set_question(
+    set_id: uuid.UUID,
+    question_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("practice_sets.manage")),
+):
+    success = await AdminService.remove_practice_set_question(db, set_id, question_id, actor=current_user)
+    if not success:
+        raise HTTPException(status_code=404, detail="Question link not found in practice set")
+    return {"message": "Question removed from practice set"}
+
+
+# ============================================================
+# 20. INTERVIEW CONFIGURATIONS / TEMPLATES (FEATURE 03)
+# ============================================================
+@router.get(
+    "/interview-configs",
+    summary="List AI interview configurations/templates",
+)
+async def list_interview_configs(
+    category: str | None = None,
+    difficulty: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("interviews.manage")),
+):
+    return await AdminService.list_interview_configs(db, category=category, difficulty=difficulty)
+
+
+@router.post(
+    "/interview-configs",
+    summary="Create AI interview configuration",
+)
+async def create_interview_config(
+    data: CreateInterviewConfigRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("interviews.manage")),
+):
+    cfg = await AdminService.create_interview_config(db, data, actor=current_user)
+    return cfg
+
+
+@router.get(
+    "/interview-configs/{config_id}",
+    summary="Get AI interview configuration detail",
+)
+async def get_interview_config(
+    config_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("interviews.manage")),
+):
+    cfg = await AdminService.get_interview_config(db, config_id)
+    if not cfg:
+        raise HTTPException(status_code=404, detail="Interview configuration not found")
+    return cfg
+
+
+@router.put(
+    "/interview-configs/{config_id}",
+    summary="Update AI interview configuration",
+)
+async def update_interview_config(
+    config_id: uuid.UUID,
+    data: UpdateInterviewConfigRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("interviews.manage")),
+):
+    cfg = await AdminService.update_interview_config(db, config_id, data, actor=current_user)
+    if not cfg:
+        raise HTTPException(status_code=404, detail="Interview configuration not found")
+    return cfg
+
+
+@router.delete(
+    "/interview-configs/{config_id}",
+    summary="Archive AI interview configuration",
+)
+async def delete_interview_config(
+    config_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("interviews.manage")),
+):
+    success = await AdminService.delete_interview_config(db, config_id, actor=current_user)
+    if not success:
+        raise HTTPException(status_code=404, detail="Interview configuration not found")
+    return {"message": "Interview configuration archived successfully"}
+
+
+# ============================================================
+# 21. CAREER ROADMAPS (FEATURE 05)
+# ============================================================
+@router.get(
+    "/roadmaps",
+    summary="List career roadmaps",
+)
+async def list_career_roadmaps(
+    target_role: str | None = None,
+    difficulty: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("roadmaps.manage")),
+):
+    return await AdminService.list_career_roadmaps(db, target_role=target_role, difficulty=difficulty)
+
+
+@router.post(
+    "/roadmaps",
+    summary="Create career roadmap",
+)
+async def create_career_roadmap(
+    data: CreateCareerRoadmapRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("roadmaps.manage")),
+):
+    crm = await AdminService.create_career_roadmap(db, data, actor=current_user)
+    return crm
+
+
+@router.get(
+    "/roadmaps/{roadmap_id}",
+    summary="Get career roadmap detail",
+)
+async def get_career_roadmap(
+    roadmap_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("roadmaps.manage")),
+):
+    crm = await AdminService.get_career_roadmap(db, roadmap_id)
+    if not crm:
+        raise HTTPException(status_code=404, detail="Career roadmap not found")
+    return crm
+
+
+@router.put(
+    "/roadmaps/{roadmap_id}",
+    summary="Update career roadmap",
+)
+async def update_career_roadmap(
+    roadmap_id: uuid.UUID,
+    data: UpdateCareerRoadmapRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("roadmaps.manage")),
+):
+    crm = await AdminService.update_career_roadmap(db, roadmap_id, data, actor=current_user)
+    if not crm:
+        raise HTTPException(status_code=404, detail="Career roadmap not found")
+    return crm
+
+
+@router.delete(
+    "/roadmaps/{roadmap_id}",
+    summary="Archive career roadmap",
+)
+async def delete_career_roadmap(
+    roadmap_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("roadmaps.manage")),
+):
+    success = await AdminService.delete_career_roadmap(db, roadmap_id, actor=current_user)
+    if not success:
+        raise HTTPException(status_code=404, detail="Career roadmap not found")
+    return {"message": "Career roadmap archived successfully"}
+
+
+# ============================================================
+# 22. CANDIDATE 360 VIEW (FEATURE 14)
+# ============================================================
+@router.get(
+    "/candidates/{candidate_id}/360",
+    response_model=Candidate360Response,
+    summary="Get comprehensive candidate 360 profile without secrets",
+)
+async def get_candidate_360(
+    candidate_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("users.view")),
+):
+    c360 = await AdminService.get_candidate_360(db, candidate_id)
+    if not c360:
+        raise HTTPException(status_code=404, detail="Candidate not found")
+    return c360
+
+
+# ============================================================
+# 23. CANDIDATE DASHBOARD CONFIGURATION (FEATURE 16)
+# ============================================================
+@router.get(
+    "/dashboard-config",
+    summary="Get candidate dashboard module visibility configuration",
+)
+async def get_dashboard_config(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("settings.view")),
+):
+    return await AdminService.get_dashboard_config(db)
+
+
+@router.put(
+    "/dashboard-config",
+    summary="Update candidate dashboard module visibility configuration",
+)
+async def update_dashboard_config(
+    data: DashboardConfigSchema,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("settings.manage")),
+):
+    return await AdminService.update_dashboard_config(db, data.model_dump(), actor=current_user)
+
+
+# ============================================================
+# 24. FEATURED CONTENT INSPECTION (FEATURE 15)
+# ============================================================
+@router.get(
+    "/featured-content",
+    summary="Get currently active featured items across all platforms",
+)
+async def get_featured_content_admin(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("settings.view")),
+):
+    return await AdminService.get_featured_content(db)
+

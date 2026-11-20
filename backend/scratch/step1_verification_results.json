@@ -1,0 +1,67 @@
+{
+  "summary": {
+    "coding_problems": {
+      "status": "VERIFIED_WITH_DEFECT",
+      "http_status": 200,
+      "total_count": 1000000,
+      "valid_uuid": true,
+      "note": "Defect recorded: subquery count query produces 1,000,000 via cartesian product instead of 1,000"
+    },
+    "candidate_360": {
+      "status": "VERIFIED",
+      "http_status": 200,
+      "resume_info_present": true,
+      "interview_info_present": true
+    },
+    "questions": {
+      "status": "VERIFIED",
+      "post_status": 201,
+      "invalid_status": 422,
+      "persisted": true,
+      "record_id": "q_0aa7986ec3b1"
+    },
+    "companies": {
+      "status": "VERIFIED",
+      "post_status": 201,
+      "invalid_status": 422,
+      "persisted": true,
+      "record_id": "cefcd774-51c5-49ca-92ce-ab80a52c14b7"
+    },
+    "resources": {
+      "status": "VERIFIED",
+      "post_status": 201,
+      "invalid_status": 422,
+      "persisted": true,
+      "record_id": "9fbc27bc-1e50-4b63-a936-6d40b59ef3e4"
+    },
+    "subscriptions": {
+      "status": "VERIFIED",
+      "post_status": 201,
+      "invalid_status": 422,
+      "persisted": true,
+      "record_id": "ffba372a-ad5a-4634-9f84-d54c8cb52c30"
+    },
+    "coupons": {
+      "status": "VERIFIED",
+      "post_status": 201,
+      "invalid_status": 422,
+      "persisted": true,
+      "record_id": "f2daa5ae-c144-4bae-ac71-e97cf5e00852"
+    },
+    "achievements": {
+      "status": "VERIFIED",
+      "post_status": 201,
+      "invalid_status": 422,
+      "persisted": true,
+      "record_id": "ach_step1_674b71"
+    }
+  },
+  "test_record_ids": {
+    "question_id": "q_0aa7986ec3b1",
+    "company_id": "cefcd774-51c5-49ca-92ce-ab80a52c14b7",
+    "resource_id": "9fbc27bc-1e50-4b63-a936-6d40b59ef3e4",
+    "subscription_plan_id": "ffba372a-ad5a-4634-9f84-d54c8cb52c30",
+    "coupon_id": "f2daa5ae-c144-4bae-ac71-e97cf5e00852",
+    "achievement_id": "ach_step1_674b71"
+  }
+}

@@ -110,6 +110,14 @@ export default function Subscription() {
     return subscription.plan?.slug || usage?.plan_slug || "free"
   }, [subscription, usage])
 
+  // Candidate-facing plans strictly limited to Free, Pro, Premium
+  const candidatePlans = useMemo(() => {
+    const CANDIDATE_SLUGS = ["free", "pro", "premium"]
+    return plans
+      .filter((p) => CANDIDATE_SLUGS.includes(p.slug.toLowerCase()))
+      .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0) || a.price - b.price)
+  }, [plans])
+
   // Open checkout modal for a plan
   const handleSelectPlan = (plan: SubscriptionPlan) => {
     if (plan.slug === currentPlanSlug) return
@@ -328,7 +336,7 @@ export default function Subscription() {
             <div className="sub-loading-spinner">Loading membership plans...</div>
           ) : (
             <div className="sub-plans-grid">
-              {plans.map((p) => {
+              {candidatePlans.map((p) => {
                 const isCurrent = p.slug === currentPlanSlug
                 const isPopular = p.slug === "pro"
                 const priceFormatted = (p.price / 100).toLocaleString("en-IN")
@@ -366,20 +374,60 @@ export default function Subscription() {
                     </div>
 
                     <div className="sub-card-footer">
-                      {isCurrent ? (
+                      {p.slug === "free" ? (
+                        isCurrent ? (
+                          <button className="sub-plan-cta current-btn" disabled>
+                            Current Plan
+                          </button>
+                        ) : (
+                          <button className="sub-plan-cta free-btn" disabled>
+                            Free Forever
+                          </button>
+                        )
+                      ) : p.slug === "pro" ? (
+                        isCurrent ? (
+                          <button className="sub-plan-cta current-btn" disabled>
+                            Current Plan
+                          </button>
+                        ) : currentPlanSlug === "premium" ? (
+                          <button
+                            className="sub-plan-cta free-btn"
+                            disabled
+                            title="Downgrades are not available during an active Premium period"
+                          >
+                            Included in Premium
+                          </button>
+                        ) : (
+                          <button
+                            className="sub-plan-cta upgrade-btn"
+                            onClick={() => handleSelectPlan(p)}
+                          >
+                            Upgrade to Pro
+                          </button>
+                        )
+                      ) : p.slug === "premium" ? (
+                        isCurrent ? (
+                          <button className="sub-plan-cta current-btn" disabled>
+                            Current Plan
+                          </button>
+                        ) : (
+                          <button
+                            className="sub-plan-cta upgrade-btn"
+                            onClick={() => handleSelectPlan(p)}
+                          >
+                            Upgrade to Premium
+                          </button>
+                        )
+                      ) : isCurrent ? (
                         <button className="sub-plan-cta current-btn" disabled>
-                          Current Active Plan
-                        </button>
-                      ) : p.price === 0 ? (
-                        <button className="sub-plan-cta free-btn" disabled>
-                          Free Forever
+                          Current Plan
                         </button>
                       ) : (
                         <button
                           className="sub-plan-cta upgrade-btn"
                           onClick={() => handleSelectPlan(p)}
                         >
-                          Upgrade to {p.name} →
+                          Upgrade to {p.name}
                         </button>
                       )}
                     </div>

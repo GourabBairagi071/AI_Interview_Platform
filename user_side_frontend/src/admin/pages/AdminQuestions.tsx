@@ -20,11 +20,10 @@ export const AdminQuestions: React.FC = () => {
   const [editingItem, setEditingItem] = useState<AdminQuestionItem | null>(null)
   const [formData, setFormData] = useState({
     technology: "Python",
-    category: "Data Structures",
+    topic: "Data Structures",
     difficulty: "Medium",
-    question_text: "",
-    expected_answer: "",
-    evaluation_criteria: "",
+    question: "",
+    explanation: "",
   })
   const [saving, setSaving] = useState(false)
 
@@ -66,41 +65,49 @@ export const AdminQuestions: React.FC = () => {
     setEditingItem(null)
     setFormData({
       technology: "Python",
-      category: "Data Structures",
+      topic: "Data Structures",
       difficulty: "Medium",
-      question_text: "",
-      expected_answer: "",
-      evaluation_criteria: "",
+      question: "",
+      explanation: "",
     })
     setFormOpen(true)
   }
 
-  const handleOpenEdit = (q: AdminQuestionItem) => {
+  const handleOpenEdit = (q: any) => {
     setEditingItem(q)
     setFormData({
       technology: q.technology,
-      category: q.category,
+      topic: q.topic || q.category || "General",
       difficulty: q.difficulty,
-      question_text: q.question_text,
-      expected_answer: q.expected_answer || "",
-      evaluation_criteria: q.evaluation_criteria || "",
+      question: q.question || q.question_text || "",
+      explanation: q.explanation || q.expected_answer || "",
     })
     setFormOpen(true)
   }
 
   const handleSaveQuestion = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!formData.question_text.trim()) {
+    if (!formData.question.trim()) {
       alert("Question text is required.")
       return
     }
 
     try {
       setSaving(true)
+      const payload = {
+        technology: formData.technology.trim(),
+        topic: formData.topic.trim(),
+        subtopic: "General",
+        difficulty: formData.difficulty,
+        question: formData.question.trim(),
+        explanation: formData.explanation.trim() || undefined,
+        question_type: "Technical",
+      }
+
       if (editingItem) {
-        await adminApi.updateQuestion(editingItem.id, formData)
+        await adminApi.updateQuestion(editingItem.id, payload)
       } else {
-        await adminApi.createQuestion(formData)
+        await adminApi.createQuestion(payload)
       }
       setFormOpen(false)
       loadQuestions()
@@ -157,22 +164,23 @@ export const AdminQuestions: React.FC = () => {
     },
     {
       key: "category",
-      header: "Category",
-      render: (q) => (
-        <span style={{ color: "#94a3b8", fontSize: "0.825rem" }}>{q.category}</span>
+      header: "Category / Topic",
+      render: (q: any) => (
+        <span style={{ color: "#94a3b8", fontSize: "0.825rem" }}>{q.topic || q.category || "General"}</span>
       ),
       width: "160px",
     },
     {
       key: "question_text",
       header: "Question Prompt",
-      render: (q) => (
-        <div style={{ color: "#f8fafc", fontWeight: 500, lineHeight: 1.4 }}>
-          {q.question_text.length > 100
-            ? `${q.question_text.substring(0, 100)}...`
-            : q.question_text}
-        </div>
-      ),
+      render: (q: any) => {
+        const text = q.question || q.question_text || ""
+        return (
+          <div style={{ color: "#f8fafc", fontWeight: 500, lineHeight: 1.4 }}>
+            {text.length > 100 ? `${text.substring(0, 100)}...` : text}
+          </div>
+        )
+      },
     },
     {
       key: "actions",
@@ -249,6 +257,22 @@ export const AdminQuestions: React.FC = () => {
 
         <div style={{ display: "flex", gap: "0.75rem" }}>
           <select
+            value={techFilter}
+            onChange={(e) => {
+              setTechFilter(e.target.value)
+              setPage(1)
+            }}
+            className="admin-select"
+          >
+            <option value="">All Technologies</option>
+            <option value="Python">Python</option>
+            <option value="JavaScript">JavaScript</option>
+            <option value="System Design">System Design</option>
+            <option value="SQL">SQL</option>
+            <option value="Java">Java</option>
+          </select>
+
+          <select
             value={diffFilter}
             onChange={(e) => {
               setDiffFilter(e.target.value)
@@ -321,13 +345,13 @@ export const AdminQuestions: React.FC = () => {
               </div>
               <div>
                 <label style={{ display: "block", fontSize: "0.8rem", color: "#94a3b8", marginBottom: "0.3rem" }}>
-                  Category
+                  Category / Topic
                 </label>
                 <input
                   type="text"
                   required
-                  value={formData.category}
-                  onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                  value={formData.topic}
+                  onChange={(e) => setFormData({ ...formData, topic: e.target.value })}
                   className="admin-input"
                   style={{ width: "100%" }}
                 />
@@ -356,8 +380,8 @@ export const AdminQuestions: React.FC = () => {
               <textarea
                 required
                 rows={4}
-                value={formData.question_text}
-                onChange={(e) => setFormData({ ...formData, question_text: e.target.value })}
+                value={formData.question}
+                onChange={(e) => setFormData({ ...formData, question: e.target.value })}
                 className="admin-input"
                 style={{ width: "100%", resize: "vertical" }}
               />
@@ -365,12 +389,12 @@ export const AdminQuestions: React.FC = () => {
 
             <div style={{ marginBottom: "1rem" }}>
               <label style={{ display: "block", fontSize: "0.8rem", color: "#94a3b8", marginBottom: "0.3rem" }}>
-                Sample Solution / Expected Answer
+                Sample Solution / Explanation
               </label>
               <textarea
                 rows={3}
-                value={formData.expected_answer}
-                onChange={(e) => setFormData({ ...formData, expected_answer: e.target.value })}
+                value={formData.explanation}
+                onChange={(e) => setFormData({ ...formData, explanation: e.target.value })}
                 className="admin-input"
                 style={{ width: "100%", resize: "vertical" }}
               />

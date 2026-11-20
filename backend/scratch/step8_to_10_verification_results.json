@@ -1,0 +1,80 @@
+{
+  "step8_notifications": {
+    "assignment_creation_notification": {
+      "status": "VERIFIED",
+      "notification_title": "New Task Assigned: Notification Test Task 068245",
+      "icon": "\ud83d\udccb"
+    },
+    "notification_isolation": {
+      "status": "VERIFIED",
+      "received_by_unintended_candidate": false
+    },
+    "completion_notification": {
+      "status": "VERIFIED",
+      "notification_title": "Task Completed: Notification Test Task 068245"
+    }
+  },
+  "step9_learning_intelligence": {
+    "test_a_coding": {
+      "status": "VERIFIED",
+      "submission_status": 200
+    },
+    "test_b_interview": {
+      "status": "VERIFIED",
+      "submission_status": 200
+    },
+    "test_c_question": {
+      "status": "VERIFIED"
+    },
+    "test_d_roadmap_resource": {
+      "status": "PARTIALLY_VERIFIED",
+      "note": "Resource completion updates assignment progress and persists score; does not directly modify skill_performances table."
+    },
+    "test_e_weak_topics_before_after": {
+      "weak_topics_before_count": 0,
+      "weak_topics_after_count": 0
+    },
+    "test_f_recommendations_before_after": {
+      "recs_before_count": 0,
+      "recs_after_count": 0
+    },
+    "defect_05_concurrency_reproduction": {
+      "status": "REPRODUCED_DEFECT_05",
+      "returned_http_codes": [
+        200,
+        500
+      ],
+      "note": "Concurrent submit requests trigger DB session flush collision during Learning Intelligence sync"
+    }
+  },
+  "step10_admin_telemetry": {
+    "global_analytics": {
+      "status": "VERIFIED",
+      "total_assignments": 119,
+      "active_assignments": 115,
+      "completed_assignments": 0,
+      "total_task_dispatches": 2503,
+      "overall_completion_rate": 2.8,
+      "avg_assignment_score": 90.2
+    },
+    "assignment_candidate_telemetry": {
+      "status": "VERIFIED",
+      "total_assigned": 1,
+      "total_started": 0,
+      "total_completed": 1,
+      "completion_rate": 100.0,
+      "avg_score": 98.0
+    },
+    "defect_01_check": {
+      "status": "DEFECT_CONFIRMED",
+      "endpoint": "/api/v1/admin/coding/problems",
+      "returned_count": 1000000,
+      "expected_database_count": 1000,
+      "note": "DEFECT-01 produces 1,000,000 count via cartesian product in subquery"
+    }
+  },
+  "test_record_ids": {
+    "cand_a_id": "b5acdf64-1bdd-4e14-a5ae-0a49207b605f",
+    "cand_b_id": "ed0d039e-87a4-41ad-b35e-b4b1ff58f010"
+  }
+}

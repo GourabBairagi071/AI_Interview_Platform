@@ -2671,4 +2671,150 @@ export async function getHelpArticle(slug: string): Promise<HelpArticleItem> {
 // Notification aliases to strictly meet Phase 15 method naming specs
 export const markNotificationRead = markNotificationAsRead
 export const markAllNotificationsRead = markAllNotificationsAsRead
+
+// ============================================================
+// FORGOT PASSWORD, OTP & RESET PASSWORD APIS
+// ============================================================
+
+export async function requestForgotPasswordOTP(email: string): Promise<{ message: string }> {
+  return apiRequest<{ message: string }>("/auth/forgot-password", {
+    method: "POST",
+    body: JSON.stringify({ email }),
+  })
+}
+
+export async function verifyResetOTP(email: string, otp: string): Promise<{ message: string; reset_token: string }> {
+  return apiRequest<{ message: string; reset_token: string }>("/auth/verify-reset-otp", {
+    method: "POST",
+    body: JSON.stringify({ email, otp }),
+  })
+}
+
+export async function resetPasswordWithToken(
+  reset_token: string,
+  new_password: string,
+  confirm_password?: string,
+): Promise<{ message: string }> {
+  return apiRequest<{ message: string }>("/auth/reset-password", {
+    method: "POST",
+    body: JSON.stringify({
+      reset_token,
+      new_password,
+      confirm_password,
+    }),
+  })
+}
+
+// ============================================================
+// ADMIN-CONTROLLED CANDIDATE EXPERIENCE & AGGREGATOR APIS
+// ============================================================
+
+export async function getCandidateDashboardSummary(): Promise<any> {
+  return apiRequest<any>("/dashboard/summary")
+}
+
+export async function getCandidateDashboardConfig(): Promise<any> {
+  return apiRequest<any>("/dashboard/config")
+}
+
+export async function getCandidateFeaturedContent(): Promise<any> {
+  return apiRequest<any>("/dashboard/featured")
+}
+
+export async function getCandidateCompanies(params: {
+  industry?: string
+  search?: string
+  page?: number
+  pageSize?: number
+} = {}): Promise<any[]> {
+  const q = new URLSearchParams()
+  if (params.industry) q.set("industry", params.industry)
+  if (params.search) q.set("search", params.search)
+  if (params.page) q.set("page", params.page.toString())
+  if (params.pageSize) q.set("page_size", params.pageSize.toString())
+  return apiRequest<any[]>(`/companies?${q.toString()}`)
+}
+
+export async function getCandidateCompanyDetail(companyId: string): Promise<any> {
+  return apiRequest<any>(`/companies/${companyId}`)
+}
+
+export async function getCandidatePracticeSets(params: {
+  topic?: string
+  difficulty?: string
+  search?: string
+  page?: number
+  pageSize?: number
+} = {}): Promise<{ items: any[]; total: number; page: number; page_size: number }> {
+  const q = new URLSearchParams()
+  if (params.topic) q.set("topic", params.topic)
+  if (params.difficulty) q.set("difficulty", params.difficulty)
+  if (params.search) q.set("search", params.search)
+  if (params.page) q.set("page", params.page.toString())
+  if (params.pageSize) q.set("page_size", params.pageSize.toString())
+  return apiRequest<any>(`/practice/sets?${q.toString()}`)
+}
+
+export async function getCandidatePracticeSetDetail(setId: string): Promise<any> {
+  return apiRequest<any>(`/practice/sets/${setId}`)
+}
+
+export async function submitCandidatePracticeSet(
+  setId: string,
+  answers: Record<string, any>,
+  durationSeconds: number = 0,
+): Promise<any> {
+  return apiRequest<any>(`/practice/sets/${setId}/submit`, {
+    method: "POST",
+    body: JSON.stringify({ answers, duration_seconds: durationSeconds }),
+  })
+}
+
+export async function getCandidatePracticeSetAttempts(setId: string): Promise<any[]> {
+  return apiRequest<any[]>(`/practice/sets/${setId}/attempts`)
+}
+
+export async function getCandidateCanonicalRoadmaps(params: {
+  targetRole?: string
+  difficulty?: string
+} = {}): Promise<any[]> {
+  const q = new URLSearchParams()
+  if (params.targetRole) q.set("target_role", params.targetRole)
+  if (params.difficulty) q.set("difficulty", params.difficulty)
+  return apiRequest<any[]>(`/learning/canonical-roadmaps?${q.toString()}`)
+}
+
+export async function getCandidateCanonicalRoadmapDetail(roadmapId: string): Promise<any> {
+  return apiRequest<any>(`/learning/canonical-roadmaps/${roadmapId}`)
+}
+
+export async function getPublicPlatformSettings(): Promise<Record<string, any>> {
+  return apiRequest<Record<string, any>>("/platform/public-settings")
+}
+
+// ============================================================
+// CANDIDATE ASSIGNED TASKS (Zero IDOR)
+// ============================================================
+
+export async function getCandidateAssignments(): Promise<any[]> {
+  return apiRequest<any[]>("/candidate/assignments")
+}
+
+export async function startCandidateAssignment(assignmentId: string): Promise<any> {
+  return apiRequest<any>(`/candidate/assignments/${assignmentId}/start`, {
+    method: "POST",
+  })
+}
+
+export async function submitCandidateAssignment(
+  assignmentId: string,
+  data: { score?: number; submission_ref_id?: string; submission_data?: any } = {},
+): Promise<any> {
+  return apiRequest<any>(`/candidate/assignments/${assignmentId}/submit`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  })
+}
+
+
 

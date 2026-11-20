@@ -56,6 +56,10 @@ from app.modules.support.model import (
     FAQ,
     HelpArticle,
 )
+from app.modules.assignments.model import (
+    CandidateAssignment,
+    CandidateAssignmentProgress,
+)
 
 config = context.config
 

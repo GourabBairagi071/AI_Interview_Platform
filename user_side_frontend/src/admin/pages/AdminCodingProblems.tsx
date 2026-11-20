@@ -172,7 +172,24 @@ export const AdminCodingProblems: React.FC = () => {
           </button>
         </form>
 
-        <div style={{ display: "flex", gap: "0.75rem" }}>
+        <div style={{ display: "flex", gap: "0.75rem", alignItems: "center" }}>
+          {loadingDetail && <span style={{ fontSize: "0.8rem", color: "#6366f1" }}>Loading problem...</span>}
+          <select
+            value={topicFilter}
+            onChange={(e) => {
+              setTopicFilter(e.target.value)
+              setPage(1)
+            }}
+            className="admin-select"
+          >
+            <option value="">All Topics</option>
+            <option value="Dynamic Programming">Dynamic Programming</option>
+            <option value="Graph Theory">Graph Theory</option>
+            <option value="Trees & Binary Search">Trees & Binary Search</option>
+            <option value="Arrays & Hashing">Arrays & Hashing</option>
+            <option value="System Design">System Design</option>
+          </select>
+
           <select
             value={diffFilter}
             onChange={(e) => {

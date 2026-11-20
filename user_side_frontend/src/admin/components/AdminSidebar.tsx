@@ -62,6 +62,7 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ collapsed }) => {
       title: "Candidates & Prep",
       items: [
         { title: "User Directory", path: "/admin/users", icon: <UsersIcon />, permission: "users.view" },
+        { title: "Targeted Assignments", path: "/admin/assignments", icon: <SparklesIcon />, permission: "users.view" },
         { title: "Interviews", path: "/admin/interviews", icon: <InterviewIcon />, permission: "interviews.view" },
         { title: "Resume & ATS", path: "/admin/resume-ats", icon: <ResumeIcon />, permission: "analytics.view" },
         { title: "Learning Intelligence", path: "/admin/learning", icon: <SparklesIcon />, permission: "analytics.view" },

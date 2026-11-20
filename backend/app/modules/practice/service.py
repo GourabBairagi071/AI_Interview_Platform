@@ -5,11 +5,17 @@ from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
 from fastapi import HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.interview.model import Interview
-from app.modules.practice.model import PracticeProgress, PracticeQuestion
+from app.modules.practice.model import (
+    PracticeProgress,
+    PracticeQuestion,
+    PracticeSet,
+    PracticeSetQuestion,
+    PracticeSetAttempt,
+)
 from app.modules.practice.schema import (
     BookmarkResponse,
     DifficultyProgressItem,
@@ -1361,4 +1367,235 @@ async def get_user_practice_stats(
         achievements=achievements,
         notifications=notifications,
     )
+
+
+async def list_candidate_practice_sets(
+    db: AsyncSession,
+    user_id: UUID,
+    topic: str | None = None,
+    difficulty: str | None = None,
+    search: str | None = None,
+    page: int = 1,
+    page_size: int = 20,
+) -> dict:
+    query = select(PracticeSet).where(PracticeSet.is_published.is_(True))
+    if topic:
+        query = query.where(PracticeSet.topic.ilike(f"%{topic}%"))
+    if difficulty:
+        query = query.where(PracticeSet.difficulty == difficulty)
+    if search:
+        query = query.where(PracticeSet.title.ilike(f"%{search}%"))
+
+    total_query = select(func.count()).select_from(query.subquery())
+    total_res = await db.execute(total_query)
+    total = total_res.scalar() or 0
+
+    query = query.order_by(PracticeSet.created_at.desc()).offset((page - 1) * page_size).limit(page_size)
+    res = await db.execute(query)
+    sets = res.scalars().all()
+
+    # Load candidate attempts
+    set_ids = [s.id for s in sets]
+    attempts_map = {}
+    if set_ids:
+        att_res = await db.execute(
+            select(PracticeSetAttempt).where(
+                PracticeSetAttempt.user_id == user_id,
+                PracticeSetAttempt.practice_set_id.in_(set_ids),
+            )
+        )
+        for att in att_res.scalars().all():
+            attempts_map.setdefault(att.practice_set_id, []).append(att)
+
+    items = []
+    for s in sets:
+        att_list = attempts_map.get(s.id, [])
+        best_score = max([a.score for a in att_list], default=None)
+        items.append({
+            "id": str(s.id),
+            "title": s.title,
+            "slug": s.slug,
+            "description": s.description,
+            "topic": s.topic,
+            "subtopic": s.subtopic,
+            "difficulty": s.difficulty,
+            "role": s.role,
+            "company": s.company,
+            "duration_minutes": s.duration_minutes,
+            "attempt_limit": s.attempt_limit,
+            "attempts_count": len(att_list),
+            "best_score": best_score,
+            "is_premium": s.is_premium,
+            "is_featured": s.is_featured,
+        })
+    return {"items": items, "total": total, "page": page, "page_size": page_size}
+
+
+async def get_candidate_practice_set_detail(
+    db: AsyncSession,
+    user_id: UUID,
+    set_id: UUID,
+) -> dict:
+    res = await db.execute(select(PracticeSet).where(PracticeSet.id == set_id, PracticeSet.is_published.is_(True)))
+    ps = res.scalar_one_or_none()
+    if not ps:
+        raise HTTPException(status_code=404, detail="Practice set not found or not published")
+
+    q_res = await db.execute(
+        select(PracticeSetQuestion).where(PracticeSetQuestion.practice_set_id == set_id).order_by(PracticeSetQuestion.order_index.asc())
+    )
+    set_questions = q_res.scalars().all()
+
+    # Load question details from catalog
+    catalog = await load_all_platform_questions(db)
+    questions = []
+    for sq in set_questions:
+        q_data = catalog.get(sq.question_id)
+        if q_data:
+            questions.append({
+                "question_id": sq.question_id,
+                "order_index": sq.order_index,
+                "points": sq.points,
+                "question": q_data.get("question"),
+                "topic": q_data.get("topic"),
+                "difficulty": q_data.get("difficulty"),
+                "question_type": q_data.get("question_type"),
+                "hints": q_data.get("hints", []),
+                "explanation": q_data.get("explanation"),
+            })
+        else:
+            # Fallback if question in practice_questions table
+            questions.append({
+                "question_id": sq.question_id,
+                "order_index": sq.order_index,
+                "points": sq.points,
+                "question": f"Question {sq.order_index + 1}",
+                "topic": ps.topic,
+                "difficulty": ps.difficulty,
+            })
+
+    # Attempt count
+    att_res = await db.execute(
+        select(func.count(PracticeSetAttempt.id)).where(
+            PracticeSetAttempt.user_id == user_id,
+            PracticeSetAttempt.practice_set_id == set_id,
+        )
+    )
+    attempt_count = att_res.scalar() or 0
+
+    return {
+        "id": str(ps.id),
+        "title": ps.title,
+        "slug": ps.slug,
+        "description": ps.description,
+        "topic": ps.topic,
+        "subtopic": ps.subtopic,
+        "difficulty": ps.difficulty,
+        "duration_minutes": ps.duration_minutes,
+        "attempt_limit": ps.attempt_limit,
+        "attempts_made": attempt_count,
+        "can_attempt": attempt_count < ps.attempt_limit,
+        "questions": questions,
+        "total_points": sum(q["points"] for q in questions),
+    }
+
+
+async def submit_candidate_practice_set(
+    db: AsyncSession,
+    user_id: UUID,
+    set_id: UUID,
+    answers: dict,
+    duration_seconds: int = 0,
+) -> dict:
+    res = await db.execute(select(PracticeSet).where(PracticeSet.id == set_id, PracticeSet.is_published.is_(True)))
+    ps = res.scalar_one_or_none()
+    if not ps:
+        raise HTTPException(status_code=404, detail="Practice set not found")
+
+    # Check attempts
+    att_count_res = await db.execute(
+        select(func.count(PracticeSetAttempt.id)).where(
+            PracticeSetAttempt.user_id == user_id,
+            PracticeSetAttempt.practice_set_id == set_id,
+        )
+    )
+    att_count = att_count_res.scalar() or 0
+    if att_count >= ps.attempt_limit:
+        raise HTTPException(status_code=400, detail="Maximum attempt limit reached for this practice set")
+
+    # Load questions
+    q_res = await db.execute(
+        select(PracticeSetQuestion).where(PracticeSetQuestion.practice_set_id == set_id)
+    )
+    set_questions = q_res.scalars().all()
+    total_points = sum(sq.points for sq in set_questions) or 100
+
+    # Score calculation
+    scored_points = 0
+    details = {}
+    catalog = await load_all_platform_questions(db)
+    for sq in set_questions:
+        ans = answers.get(str(sq.question_id)) or answers.get(sq.question_id)
+        is_answered = bool(ans and str(ans).strip())
+        earned = sq.points if is_answered else 0
+        scored_points += earned
+        q_data = catalog.get(sq.question_id, {})
+        details[str(sq.question_id)] = {
+            "answered": is_answered,
+            "points_earned": earned,
+            "max_points": sq.points,
+            "explanation": q_data.get("explanation", ""),
+        }
+
+    pct = round((scored_points / total_points) * 100.0, 1) if total_points > 0 else 100.0
+    passed = pct >= 60.0
+
+    attempt = PracticeSetAttempt(
+        user_id=user_id,
+        practice_set_id=set_id,
+        score=pct,
+        total_points=total_points,
+        answers=answers,
+        details=details,
+        duration_seconds=duration_seconds,
+        is_completed=True,
+    )
+    db.add(attempt)
+    await db.commit()
+    await db.refresh(attempt)
+
+    return {
+        "attempt_id": str(attempt.id),
+        "score_percentage": pct,
+        "total_points": total_points,
+        "scored_points": scored_points,
+        "passed": passed,
+        "duration_seconds": duration_seconds,
+        "details": details,
+    }
+
+
+async def get_candidate_practice_set_attempts(
+    db: AsyncSession,
+    user_id: UUID,
+    set_id: UUID,
+) -> list[dict]:
+    res = await db.execute(
+        select(PracticeSetAttempt)
+        .where(PracticeSetAttempt.user_id == user_id, PracticeSetAttempt.practice_set_id == set_id)
+        .order_by(PracticeSetAttempt.created_at.desc())
+    )
+    attempts = res.scalars().all()
+    return [
+        {
+            "id": str(a.id),
+            "score": a.score,
+            "total_points": a.total_points,
+            "duration_seconds": a.duration_seconds,
+            "created_at": a.created_at,
+            "is_completed": a.is_completed,
+        }
+        for a in attempts
+    ]
+
 

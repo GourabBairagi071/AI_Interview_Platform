@@ -1,0 +1,108 @@
+{
+  "step4_scheduling": {
+    "1_future_scheduled": {
+      "status": "VERIFIED",
+      "status_code": 201,
+      "returned_status": "SCHEDULED"
+    },
+    "2_before_scheduled_inactive": {
+      "status": "VERIFIED",
+      "inbox_contains_scheduled": false
+    },
+    "3_after_scheduled_active": {
+      "status": "VERIFIED",
+      "returned_status": "ASSIGNED"
+    },
+    "4_start_date_enforcement": {
+      "status": "VERIFIED",
+      "status_code": 201
+    },
+    "5_6_due_date_and_expired_behavior": {
+      "status": "VERIFIED",
+      "start_status_code": 400,
+      "response_detail": "{\"detail\":\"Assignment has expired\"}"
+    },
+    "7_completed_remains_completed": {
+      "status": "VERIFIED",
+      "persisted_status": "COMPLETED"
+    },
+    "8_9_server_time_and_payload_protection": {
+      "status": "VERIFIED",
+      "override_attempt_response_status": "COMPLETED"
+    }
+  },
+  "step5_attempt_limits": {
+    "1_2_first_start_succeeds": {
+      "status": "VERIFIED"
+    },
+    "3_attempt_count_is_1": {
+      "status": "VERIFIED"
+    },
+    "4_second_start_rejected": {
+      "status": "VERIFIED",
+      "response": "{\"detail\":\"Attempt limit reached\"}"
+    },
+    "5_6_completed_cannot_restart": {
+      "status": "VERIFIED"
+    },
+    "7_attempt_state_persists": {
+      "status": "VERIFIED"
+    }
+  },
+  "step6_security_idor": {
+    "1_unauth_admin_endpoint_blocked": {
+      "status": "VERIFIED",
+      "code": 401
+    },
+    "2_candidate_admin_endpoint_blocked": {
+      "status": "VERIFIED",
+      "get_code": 403,
+      "post_code": 403
+    },
+    "3_4_idor_candidate_isolation_start": {
+      "status": "VERIFIED",
+      "code": 404
+    },
+    "3_4_idor_candidate_isolation_submit": {
+      "status": "VERIFIED",
+      "code": 404
+    },
+    "5_invalid_uuid_validation": {
+      "status": "VERIFIED",
+      "code": 422
+    },
+    "6_telemetry_access_blocked": {
+      "status": "VERIFIED",
+      "code": 403
+    },
+    "7_recipient_cohort_access_blocked": {
+      "status": "VERIFIED",
+      "code": 403
+    }
+  },
+  "step7_race_conditions": {
+    "1_2_concurrent_starts_handled": {
+      "status": "VERIFIED",
+      "codes": [
+        200,
+        200,
+        200
+      ]
+    },
+    "3_4_concurrent_submits_handled": {
+      "status": "FAILED",
+      "codes": [
+        200,
+        500
+      ]
+    },
+    "5_final_status_consistent": {
+      "status": "VERIFIED",
+      "final_status": "COMPLETED"
+    }
+  },
+  "test_record_ids": {
+    "cand_a_id": "80a65d04-5764-42f3-bc51-db219cb64621",
+    "cand_b_id": "3bc513a0-19b7-488f-a259-cf0a9b9c1045"
+  }
+}

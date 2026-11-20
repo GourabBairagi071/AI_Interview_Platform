@@ -27,6 +27,7 @@ TOPIC_TARGETS = {
     "Greedy": 35,
     "Dynamic Programming": 113,
     "Backtracking": 30,
+
     "Recursion": 20,
     "Bit Manipulation": 20,
     "Trie": 18,
@@ -197,3 +198,4 @@ def compute_quotas():
         i += 1
 
     return topic_diff
+    

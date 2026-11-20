@@ -2,7 +2,11 @@ import { Navigate, Route, Routes } from "react-router-dom"
 
 import Login from "./pages/Login"
 import Signup from "./pages/Signup"
+import ForgotPassword from "./pages/ForgotPassword"
+import VerifyOtp from "./pages/VerifyOtp"
+import ResetPassword from "./pages/ResetPassword"
 import Dashboard from "./pages/Dashboard"
+
 import Settings from "./pages/Settings"
 import Resume from "./pages/Resume"
 import InterviewSetup from "./pages/InterviewSetup"
@@ -55,6 +59,7 @@ import AdminRBAC from "./admin/pages/AdminRBAC"
 import AdminRAG from "./admin/pages/AdminRAG"
 import AdminLearning from "./admin/pages/AdminLearning"
 import AdminContests from "./admin/pages/AdminContests"
+import { AdminAssignments } from "./admin/pages/AdminAssignments"
 
 function App() {
   return (
@@ -80,6 +85,22 @@ function App() {
         path="/signup"
         element={<Signup />}
       />
+
+      <Route
+        path="/forgot-password"
+        element={<ForgotPassword />}
+      />
+
+      <Route
+        path="/verify-otp"
+        element={<VerifyOtp />}
+      />
+
+      <Route
+        path="/reset-password"
+        element={<ResetPassword />}
+      />
+
 
 
       {/* Main application (Protected) */}
@@ -335,6 +356,7 @@ function App() {
       >
         <Route index element={<AdminDashboard />} />
         <Route path="dashboard" element={<AdminDashboard />} />
+        <Route path="assignments" element={<AdminAssignments />} />
         <Route path="users" element={<AdminUsers />} />
         <Route path="users/:userId" element={<AdminUserDetails />} />
         <Route path="users/:id" element={<AdminUserDetails />} />

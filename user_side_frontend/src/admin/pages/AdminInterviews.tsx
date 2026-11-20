@@ -242,7 +242,7 @@ export const AdminInterviews: React.FC = () => {
                   {selectedInterview.job_role} Interview Audit
                 </h3>
                 <p style={{ color: "#94a3b8", fontSize: "0.85rem" }}>
-                  ID: {selectedInterview.id} • Candidate: {selectedInterview.user_email || selectedInterview.user_id}
+                  ID: {selectedInterview.id} • Candidate: {selectedInterview.user_email || selectedInterview.user_id} {detailLoading && "(Refreshing...)"}
                 </p>
               </div>
               <button

@@ -20,13 +20,22 @@ from app.modules.payments.model import (
 # PLAN QUERIES
 # ============================================================
 
-async def get_active_plans(db: AsyncSession) -> list[SubscriptionPlan]:
-    """Return all active subscription plans ordered by sort_order."""
-    result = await db.execute(
-        select(SubscriptionPlan)
-        .where(SubscriptionPlan.is_active.is_(True))
-        .order_by(SubscriptionPlan.sort_order)
-    )
+CANDIDATE_PLAN_SLUGS = ["free", "pro", "premium"]
+
+
+async def get_active_plans(
+    db: AsyncSession,
+    candidate_only: bool = True,
+) -> list[SubscriptionPlan]:
+    """Return active subscription plans ordered by sort_order and price.
+    If candidate_only is True (default), restricts results to the 3 official
+    candidate tiers: Free, Pro, and Premium.
+    """
+    query = select(SubscriptionPlan).where(SubscriptionPlan.is_active.is_(True))
+    if candidate_only:
+        query = query.where(SubscriptionPlan.slug.in_(CANDIDATE_PLAN_SLUGS))
+    query = query.order_by(SubscriptionPlan.sort_order, SubscriptionPlan.price)
+    result = await db.execute(query)
     return list(result.scalars().all())
 
 

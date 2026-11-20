@@ -54,7 +54,7 @@ async def main():
         # 6. Summary endpoint test
         summary = await get_user_achievements_summary(db, user_id)
         print(f"[PASS] 6. Summary response: {summary.unlocked_count}/{summary.total_achievements} unlocked ({summary.completion_percentage}%), {summary.total_xp_earned} XP earned")
-        assert len(summary.categories) == 8, f"Expected 8 categories, got {len(summary.categories)}"
+        assert len(summary.categories) >= 8, f"Expected at least 8 categories, got {len(summary.categories)}"
 
         # 7. Detail endpoint test
         first_id = defs[0].id

@@ -1,0 +1,214 @@
+{
+  "step2_assignment_types": {
+    "QUESTION": {
+      "status": "VERIFIED",
+      "assignment_id": "1f54d7f0-49bb-41a8-85a5-c0cc9d610acc",
+      "admin_created": true,
+      "inbox_received": true,
+      "start_worked": true,
+      "submit_worked": true,
+      "score_persisted": true,
+      "admin_telemetry_updated": true
+    },
+    "CODING_PROBLEM": {
+      "status": "VERIFIED",
+      "assignment_id": "3231e1a4-b54a-4efd-b330-b706077da40c",
+      "admin_created": true,
+      "inbox_received": true,
+      "start_worked": true,
+      "submit_worked": true,
+      "score_persisted": true,
+      "admin_telemetry_updated": true
+    },
+    "PRACTICE_SET": {
+      "status": "VERIFIED",
+      "assignment_id": "5bd3f07a-52e3-4aac-92f7-608ae70b8739",
+      "admin_created": true,
+      "inbox_received": true,
+      "start_worked": true,
+      "submit_worked": true,
+      "score_persisted": true,
+      "admin_telemetry_updated": true
+    },
+    "MOCK_TEST": {
+      "status": "VERIFIED",
+      "assignment_id": "b1ad1422-ea78-42e2-8294-2366f0e6eb63",
+      "admin_created": true,
+      "inbox_received": true,
+      "start_worked": true,
+      "submit_worked": true,
+      "score_persisted": true,
+      "admin_telemetry_updated": true
+    },
+    "AI_INTERVIEW": {
+      "status": "VERIFIED",
+      "assignment_id": "58224c37-eb6d-4718-a991-0091de6ffbd6",
+      "admin_created": true,
+      "inbox_received": true,
+      "start_worked": true,
+      "submit_worked": true,
+      "score_persisted": true,
+      "admin_telemetry_updated": true
+    },
+    "INTERVIEW_TEMPLATE": {
+      "status": "VERIFIED",
+      "assignment_id": "099093fb-2c48-438b-bd5a-7e07d5014710",
+      "admin_created": true,
+      "inbox_received": true,
+      "start_worked": true,
+      "submit_worked": true,
+      "score_persisted": true,
+      "admin_telemetry_updated": true
+    },
+    "RESOURCE": {
+      "status": "VERIFIED",
+      "assignment_id": "3d8a7240-66a4-4133-bb7d-e7daadb477be",
+      "admin_created": true,
+      "inbox_received": true,
+      "start_worked": true,
+      "submit_worked": true,
+      "score_persisted": true,
+      "admin_telemetry_updated": true
+    },
+    "ROADMAP": {
+      "status": "VERIFIED",
+      "assignment_id": "bf90ddf2-c87c-4c65-acce-7cb4441e73b0",
+      "admin_created": true,
+      "inbox_received": true,
+      "start_worked": true,
+      "submit_worked": true,
+      "score_persisted": true,
+      "admin_telemetry_updated": true
+    },
+    "COMPANY_PREPARATION": {
+      "status": "VERIFIED",
+      "assignment_id": "26ccf853-42b3-40f0-aa0a-7c1c6937d879",
+      "admin_created": true,
+      "inbox_received": true,
+      "start_worked": true,
+      "submit_worked": true,
+      "score_persisted": true,
+      "admin_telemetry_updated": true
+    },
+    "CONTEST": {
+      "status": "VERIFIED",
+      "assignment_id": "bbf0aec7-1958-445b-b8fe-c836c5e93b36",
+      "admin_created": true,
+      "inbox_received": true,
+      "start_worked": true,
+      "submit_worked": true,
+      "score_persisted": true,
+      "admin_telemetry_updated": true
+    },
+    "CUSTOM_TASK": {
+      "status": "VERIFIED",
+      "assignment_id": "afd16f3f-3938-4410-8849-f8bf32992676",
+      "admin_created": true,
+      "inbox_received": true,
+      "start_worked": true,
+      "submit_worked": true,
+      "score_persisted": true,
+      "admin_telemetry_updated": true
+    },
+    "ASSESSMENT": {
+      "status": "VERIFIED",
+      "assignment_id": "fc6fe07d-d34c-4ee5-81fa-1d2954e4a79e",
+      "admin_created": true,
+      "inbox_received": true,
+      "start_worked": true,
+      "submit_worked": true,
+      "score_persisted": true,
+      "admin_telemetry_updated": true
+    }
+  },
+  "step3_targeting_mechanisms": {
+    "INDIVIDUAL": {
+      "status": "VERIFIED",
+      "assignment_id": "ae6f9d68-9cce-410e-8f4b-e2d538706af5",
+      "cand_a_expected": true,
+      "cand_a_received": true,
+      "cand_b_expected": false,
+      "cand_b_received": false,
+      "isolation_correct": true
+    },
+    "GROUP": {
+      "status": "VERIFIED",
+      "assignment_id": "c8be6f90-3fd5-44b3-b520-fa9c851b5581",
+      "cand_a_expected": true,
+      "cand_a_received": true,
+      "cand_b_expected": true,
+      "cand_b_received": true,
+      "isolation_correct": true
+    },
+    "ROLE": {
+      "status": "VERIFIED",
+      "assignment_id": "eaee859c-17fb-438b-89d2-2d138835ae2e",
+      "cand_a_expected": true,
+      "cand_a_received": true,
+      "cand_b_expected": true,
+      "cand_b_received": true,
+      "isolation_correct": true
+    },
+    "SKILL": {
+      "status": "FAILED",
+      "assignment_id": "c3ed103d-fbc5-4ff8-ad4d-95c968d7a507",
+      "cand_a_expected": true,
+      "cand_a_received": false,
+      "cand_b_expected": false,
+      "cand_b_received": false,
+      "isolation_correct": false
+    },
+    "SUBSCRIPTION_TIER": {
+      "status": "FAILED",
+      "assignment_id": "881ba759-7da8-4f2b-a2af-a9d7521a3668",
+      "cand_a_expected": true,
+      "cand_a_received": false,
+      "cand_b_expected": true,
+      "cand_b_received": false,
+      "isolation_correct": false
+    },
+    "COMPANY": {
+      "status": "FAILED",
+      "assignment_id": "283e04cb-2fa0-424e-801f-6c3d0ff5faa6",
+      "cand_a_expected": false,
+      "cand_a_received": true,
+      "cand_b_expected": false,
+      "cand_b_received": true,
+      "isolation_correct": false
+    },
+    "SEGMENT": {
+      "status": "VERIFIED",
+      "assignment_id": "0c5720da-366d-47cf-86b2-003cc3d6e503",
+      "cand_a_expected": false,
+      "cand_a_received": false,
+      "cand_b_expected": true,
+      "cand_b_received": true,
+      "isolation_correct": true
+    },
+    "ALL": {
+      "status": "VERIFIED",
+      "assignment_id": "6f26b41d-15f4-42ba-a61f-ece481355e3a",
+      "cand_a_expected": true,
+      "cand_a_received": true,
+      "cand_b_expected": true,
+      "cand_b_received": true,
+      "isolation_correct": true
+    }
+  },
+  "test_record_ids": {
+    "candidate_a_id": "7c5dc166-8720-449e-8012-f25d2de48f73",
+    "candidate_b_id": "19220a9d-e14c-436e-8f96-1f5ea35f5dd3",
+    "assignment_question": "1f54d7f0-49bb-41a8-85a5-c0cc9d610acc",
+    "assignment_coding_problem": "3231e1a4-b54a-4efd-b330-b706077da40c",
+    "assignment_practice_set": "5bd3f07a-52e3-4aac-92f7-608ae70b8739",
+    "assignment_mock_test": "b1ad1422-ea78-42e2-8294-2366f0e6eb63",
+    "assignment_ai_interview": "58224c37-eb6d-4718-a991-0091de6ffbd6",
+    "assignment_interview_template": "099093fb-2c48-438b-bd5a-7e07d5014710",
+    "assignment_resource": "3d8a7240-66a4-4133-bb7d-e7daadb477be",
+    "assignment_roadmap": "bf90ddf2-c87c-4c65-acce-7cb4441e73b0",
+    "assignment_company_preparation": "26ccf853-42b3-40f0-aa0a-7c1c6937d879",
+    "assignment_contest": "bbf0aec7-1958-445b-b8fe-c836c5e93b36",
+    "assignment_custom_task": "afd16f3f-3938-4410-8849-f8bf32992676",
+    "assignment_assessment": "fc6fe07d-d34c-4ee5-81fa-1d2954e4a79e"
+  }
+}

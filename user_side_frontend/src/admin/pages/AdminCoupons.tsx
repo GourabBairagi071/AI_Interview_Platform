@@ -43,12 +43,24 @@ export const AdminCoupons: React.FC = () => {
       return
     }
 
+    const now = new Date()
+    const oneYearLater = new Date()
+    oneYearLater.setFullYear(now.getFullYear() + 1)
+
+    const payload = {
+      code: formData.code.toUpperCase().trim(),
+      discount_type: "PERCENTAGE",
+      discount_value: Number(formData.discount_percent || 20),
+      max_discount_inr: 1000,
+      min_order_inr: 0,
+      valid_from: now.toISOString(),
+      valid_until: oneYearLater.toISOString(),
+      usage_limit: formData.usage_limit ? Number(formData.usage_limit) : undefined,
+    }
+
     try {
       setSaving(true)
-      await adminApi.createCoupon({
-        ...formData,
-        code: formData.code.toUpperCase().trim(),
-      })
+      await adminApi.createCoupon(payload)
       setFormOpen(false)
       loadCoupons()
     } catch (err: any) {
@@ -82,7 +94,7 @@ export const AdminCoupons: React.FC = () => {
       header: "Discount",
       render: (c) => (
         <span style={{ fontWeight: 700, color: "#34d399" }}>
-          {c.discount_percent}% OFF
+          {c.discount_type === "FLAT" ? `₹${c.discount_value} OFF` : `${c.discount_value || c.discount_percent}% OFF`}
         </span>
       ),
       width: "140px",

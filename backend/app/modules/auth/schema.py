@@ -1,10 +1,11 @@
-from pydantic import BaseModel, EmailStr, Field
 from uuid import UUID
 
-
 from pydantic import BaseModel, EmailStr, Field
+
+
 class GoogleAuthRequest(BaseModel):
     credential: str
+
 
 class SignupRequest(BaseModel):
     full_name: str = Field(min_length=2, max_length=255)
@@ -21,8 +22,9 @@ class UserResponse(BaseModel):
     is_admin: bool = False
 
     model_config = {
-        "from_attributes": True
+        "from_attributes": True,
     }
+
 
 class LoginRequest(BaseModel):
     email: EmailStr
@@ -34,29 +36,42 @@ class LoginResponse(BaseModel):
     token_type: str
     user: UserResponse
 
+
 class ForgotPasswordRequest(BaseModel):
     email: EmailStr
 
 
 class ForgotPasswordResponse(BaseModel):
     message: str
+
+
+class VerifyResetOTPRequest(BaseModel):
+    email: EmailStr
+    otp: str = Field(min_length=6, max_length=6)
+
+
+class VerifyResetOTPResponse(BaseModel):
+    message: str
+    reset_token: str
+
+
+class ResetPasswordRequest(BaseModel):
     reset_token: str | None = None
-
-class ResetPasswordRequest(BaseModel):
-    token: str = Field(min_length=1)
+    token: str | None = None
     new_password: str = Field(min_length=8, max_length=128)
+    confirm_password: str | None = None
+
+    @property
+    def effective_token(self) -> str:
+        tok = self.reset_token or self.token
+        if not tok:
+            raise ValueError("Reset token is required")
+        return tok
 
 
 class ResetPasswordResponse(BaseModel):
     message: str
 
-class ResetPasswordRequest(BaseModel):
-    token: str = Field(min_length=1)
-    new_password: str = Field(min_length=8, max_length=128)
-
-
-class ResetPasswordResponse(BaseModel):
-    message: str
 
 class ProfileResponse(BaseModel):
     id: UUID
@@ -69,11 +84,8 @@ class ProfileResponse(BaseModel):
     resume_url: str | None
 
     model_config = {
-        "from_attributes": True
+        "from_attributes": True,
     }
-
-class GoogleAuthRequest(BaseModel):
-    credential: str
 
 
 class ProfileUpdateRequest(BaseModel):

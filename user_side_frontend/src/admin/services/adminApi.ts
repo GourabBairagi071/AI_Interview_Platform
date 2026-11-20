@@ -427,4 +427,203 @@ export const adminApi = {
     if (params.page_size) q.set("page_size", params.page_size.toString())
     return adminRequest<any>(`/admin/contests?${q.toString()}`)
   },
+
+  createContest: (data: any) =>
+    adminRequest<any>("/admin/contests", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  updateContest: (contestId: string, data: any) =>
+    adminRequest<any>(`/admin/contests/${contestId}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    }),
+
+  deleteContest: (contestId: string) =>
+    adminRequest<any>(`/admin/contests/${contestId}`, {
+      method: "DELETE",
+    }),
+
+  addContestProblem: (contestId: string, data: any) =>
+    adminRequest<any>(`/admin/contests/${contestId}/problems`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  removeContestProblem: (contestId: string, problemId: string) =>
+    adminRequest<any>(`/admin/contests/${contestId}/problems/${problemId}`, {
+      method: "DELETE",
+    }),
+
+  getContestRegistrations: (contestId: string, params: { page?: number; page_size?: number } = {}) => {
+    const q = new URLSearchParams()
+    if (params.page) q.set("page", params.page.toString())
+    if (params.page_size) q.set("page_size", params.page_size.toString())
+    return adminRequest<any>(`/admin/contests/${contestId}/registrations?${q.toString()}`)
+  },
+
+  // Coding Problems Management
+  createCodingProblem: (data: any) =>
+    adminRequest<any>("/admin/coding/problems", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  updateCodingProblem: (problemId: string, data: any) =>
+    adminRequest<any>(`/admin/coding/problems/${problemId}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    }),
+
+  deleteCodingProblem: (problemId: string) =>
+    adminRequest<any>(`/admin/coding/problems/${problemId}`, {
+      method: "DELETE",
+    }),
+
+  // Practice Sets Management
+  getPracticeSets: (params: { page?: number; page_size?: number; topic?: string; difficulty?: string; search?: string } = {}) => {
+    const q = new URLSearchParams()
+    if (params.page) q.set("page", params.page.toString())
+    if (params.page_size) q.set("page_size", params.page_size.toString())
+    if (params.topic) q.set("topic", params.topic)
+    if (params.difficulty) q.set("difficulty", params.difficulty)
+    if (params.search) q.set("search", params.search)
+    return adminRequest<any>(`/admin/practice-sets?${q.toString()}`)
+  },
+
+  getPracticeSet: (setId: string) =>
+    adminRequest<any>(`/admin/practice-sets/${setId}`),
+
+  createPracticeSet: (data: any) =>
+    adminRequest<any>("/admin/practice-sets", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  updatePracticeSet: (setId: string, data: any) =>
+    adminRequest<any>(`/admin/practice-sets/${setId}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    }),
+
+  deletePracticeSet: (setId: string) =>
+    adminRequest<any>(`/admin/practice-sets/${setId}`, {
+      method: "DELETE",
+    }),
+
+  addPracticeSetQuestion: (setId: string, data: any) =>
+    adminRequest<any>(`/admin/practice-sets/${setId}/questions`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  removePracticeSetQuestion: (setId: string, questionId: string) =>
+    adminRequest<any>(`/admin/practice-sets/${setId}/questions/${questionId}`, {
+      method: "DELETE",
+    }),
+
+  // AI Interview Configurations / Templates
+  getInterviewConfigs: (params: { category?: string; difficulty?: string } = {}) => {
+    const q = new URLSearchParams()
+    if (params.category) q.set("category", params.category)
+    if (params.difficulty) q.set("difficulty", params.difficulty)
+    return adminRequest<any>(`/admin/interview-configs?${q.toString()}`)
+  },
+
+  getInterviewConfig: (configId: string) =>
+    adminRequest<any>(`/admin/interview-configs/${configId}`),
+
+  createInterviewConfig: (data: any) =>
+    adminRequest<any>("/admin/interview-configs", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  updateInterviewConfig: (configId: string, data: any) =>
+    adminRequest<any>(`/admin/interview-configs/${configId}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    }),
+
+  deleteInterviewConfig: (configId: string) =>
+    adminRequest<any>(`/admin/interview-configs/${configId}`, {
+      method: "DELETE",
+    }),
+
+  // Career Roadmaps
+  getRoadmaps: (params: { target_role?: string; difficulty?: string } = {}) => {
+    const q = new URLSearchParams()
+    if (params.target_role) q.set("target_role", params.target_role)
+    if (params.difficulty) q.set("difficulty", params.difficulty)
+    return adminRequest<any>(`/admin/roadmaps?${q.toString()}`)
+  },
+
+  getRoadmap: (roadmapId: string) =>
+    adminRequest<any>(`/admin/roadmaps/${roadmapId}`),
+
+  createRoadmap: (data: any) =>
+    adminRequest<any>("/admin/roadmaps", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  updateRoadmap: (roadmapId: string, data: any) =>
+    adminRequest<any>(`/admin/roadmaps/${roadmapId}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    }),
+
+  deleteRoadmap: (roadmapId: string) =>
+    adminRequest<any>(`/admin/roadmaps/${roadmapId}`, {
+      method: "DELETE",
+    }),
+
+  // Candidate 360 View
+  getCandidate360: (candidateId: string) =>
+    adminRequest<any>(`/admin/candidates/${candidateId}/360`),
+
+  // Candidate Dashboard Config
+  getDashboardConfig: () =>
+    adminRequest<any>("/admin/dashboard-config"),
+
+  updateDashboardConfig: (data: any) =>
+    adminRequest<any>("/admin/dashboard-config", {
+      method: "PUT",
+      body: JSON.stringify(data),
+    }),
+
+  // Featured Content
+  getFeaturedContent: () =>
+    adminRequest<any>("/admin/featured-content"),
+
+  // Candidate Assignment Engine
+  getAssignments: (params: { page?: number; page_size?: number; status?: string; assignment_type?: string; search?: string } = {}) => {
+    const q = new URLSearchParams()
+    if (params.page) q.set("page", params.page.toString())
+    if (params.page_size) q.set("page_size", params.page_size.toString())
+    if (params.status) q.set("status", params.status)
+    if (params.assignment_type) q.set("assignment_type", params.assignment_type)
+    if (params.search) q.set("search", params.search)
+    return adminRequest<any>(`/admin/assignments?${q.toString()}`)
+  },
+
+  createAssignment: (data: any) =>
+    adminRequest<any>("/admin/assignments", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  getAssignmentDetail: (id: string) =>
+    adminRequest<any>(`/admin/assignments/${id}`),
+
+  updateAssignmentStatus: (id: string, status: string) =>
+    adminRequest<any>(`/admin/assignments/${id}/status`, {
+      method: "PUT",
+      body: JSON.stringify({ status }),
+    }),
+
+  getAssignmentAnalytics: () =>
+    adminRequest<any>("/admin/assignments/analytics"),
 }
+

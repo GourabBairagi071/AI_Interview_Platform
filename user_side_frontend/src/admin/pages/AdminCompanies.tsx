@@ -88,17 +88,24 @@ export const AdminCompanies: React.FC = () => {
 
   const handleSaveCompany = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!formData.name.trim() || !formData.slug.trim()) {
-      alert("Name and slug are required.")
+    if (!formData.name.trim()) {
+      alert("Company Name is required.")
       return
     }
 
+    const parsedRoles = formData.hiring_roles
+      .split(",")
+      .map((r) => r.trim())
+      .filter(Boolean)
+
     const payload = {
-      ...formData,
-      hiring_roles: formData.hiring_roles
-        .split(",")
-        .map((r) => r.trim())
-        .filter(Boolean),
+      name: formData.name.trim(),
+      industry: formData.industry || "Technology",
+      website: formData.website.trim() || undefined,
+      description: formData.description.trim() || undefined,
+      difficulty: formData.difficulty || "Medium",
+      roles: parsedRoles,
+      interview_types: ["Technical", "System Design", "Behavioral"],
     }
 
     try {

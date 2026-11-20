@@ -69,6 +69,12 @@ class Contest(Base):
         default=False,
     )
 
+    is_featured: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+    )
+
     scoring_type: Mapped[str] = mapped_column(
         String(50),
         nullable=False,

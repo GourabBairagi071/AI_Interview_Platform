@@ -36,14 +36,27 @@ export const AdminSubscriptions: React.FC = () => {
 
   const handleSavePlan = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!formData.name.trim() || !formData.slug.trim()) {
-      alert("Name and slug are required.")
+    if (!formData.name.trim()) {
+      alert("Plan name is required.")
       return
+    }
+
+    const planCode = (formData.slug.trim() || formData.name.toLowerCase().replace(/[^a-z0-9]/g, "_")).toUpperCase()
+    const payload = {
+      plan_code: planCode,
+      name: formData.name.trim(),
+      description: formData.description.trim() || `${formData.name.trim()} tier`,
+      price_inr: Number(formData.price_inr || 0),
+      duration_days: formData.interval === "year" ? 365 : 30,
+      interview_limit: 15,
+      resume_analyses_limit: 10,
+      coding_practice_unlimited: true,
+      is_active: true,
     }
 
     try {
       setSaving(true)
-      await adminApi.createSubscriptionPlan(formData)
+      await adminApi.createSubscriptionPlan(payload)
       setFormOpen(false)
       loadPlans()
     } catch (err: any) {

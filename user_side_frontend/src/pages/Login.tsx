@@ -213,10 +213,9 @@ function Login() {
   // ============================================================
 
   function handleForgotPassword() {
-    setError(
-      "Password reset is coming soon.",
-    )
+    navigate("/forgot-password")
   }
+
 
   // ============================================================
   // UI

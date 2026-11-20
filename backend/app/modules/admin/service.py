@@ -1,8 +1,9 @@
 import json
 import logging
 from pathlib import Path
+import re
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 from sqlalchemy import and_, cast, Date, desc, func, or_, select
@@ -17,19 +18,33 @@ from app.modules.admin.model import (
     AdminRole,
     AIAgentConfig,
     Company,
+    InterviewConfiguration,
     SystemSetting,
 )
 from app.modules.admin.permissions import ALL_PERMISSIONS, DEFAULT_ROLE_PERMISSIONS
 from app.modules.admin.schema import (
+    AddContestProblemRequest,
+    AddPracticeSetQuestionRequest,
     BroadcastNotificationRequest,
     CreateAchievementRequest,
+    CreateCareerRoadmapRequest,
+    CreateCodingProblemRequest,
     CreateCompanyRequest,
+    CreateContestRequest,
     CreateCouponRequest,
+    CreateInterviewConfigRequest,
+    CreatePracticeSetRequest,
     CreateQuestionRequest,
     CreateResourceRequest,
     CreateSubscriptionPlanRequest,
+    DashboardConfigSchema,
     UpdateAIAgentConfigRequest,
+    UpdateCareerRoadmapRequest,
+    UpdateCodingProblemRequest,
     UpdateCompanyRequest,
+    UpdateContestRequest,
+    UpdateInterviewConfigRequest,
+    UpdatePracticeSetRequest,
     UpdateQuestionRequest,
     UpdateResourceRequest,
 )
@@ -44,6 +59,8 @@ from app.modules.coding.contest_model import (
 from app.modules.coding.model import CodingProblem, CodingSubmission
 from app.modules.interview.model import Interview
 from app.modules.learning.model import (
+    CareerRoadmap,
+    DailyPracticePlan,
     LearningProfile,
     LearningResource,
     LearningRoadmap,
@@ -57,7 +74,7 @@ from app.modules.payments.model import (
     SubscriptionPlan,
     UserSubscription,
 )
-from app.modules.practice.model import PracticeProgress, PracticeQuestion
+from app.modules.practice.model import PracticeProgress, PracticeQuestion, PracticeSet, PracticeSetAttempt, PracticeSetQuestion
 from app.modules.rag.model import InterviewQuestionVector
 from app.modules.resume.model import Resume
 from app.modules.support.model import Feedback, SupportTicket, SupportTicketMessage
@@ -2273,7 +2290,1074 @@ class AdminService:
         }
 
     # ============================================================
-    # 18. INITIAL SYSTEM SEEDER (RUNS ON STARTUP)
+    # 18. CONTESTS FULL MANAGEMENT (FEATURE 01)
+    # ============================================================
+    @staticmethod
+    async def create_contest(
+        db: AsyncSession,
+        data: CreateContestRequest,
+        actor: User,
+    ) -> Contest:
+        slug = data.slug or re.sub(r"[^a-z0-9]+", "-", data.title.lower()).strip("-") + f"-{uuid.uuid4().hex[:4]}"
+        contest = Contest(
+            title=data.title,
+            slug=slug,
+            description=data.description,
+            start_time=data.start_time,
+            end_time=data.end_time,
+            duration_minutes=data.duration_minutes,
+            status=data.status,
+            max_participants=data.max_participants,
+            is_proctored=data.is_proctored,
+            is_featured=data.is_featured,
+            scoring_type=data.scoring_type,
+            penalty_per_wrong_attempt_mins=data.penalty_per_wrong_attempt_mins,
+            rules=data.rules,
+            allowed_languages=data.allowed_languages,
+        )
+        db.add(contest)
+        await db.commit()
+        await db.refresh(contest)
+        await AdminService.log_audit(
+            db=db,
+            actor=actor,
+            action="CONTEST_CREATE",
+            resource="contest",
+            resource_id=str(contest.id),
+            details={"title": contest.title, "status": contest.status},
+        )
+        return contest
+
+    @staticmethod
+    async def update_contest(
+        db: AsyncSession,
+        contest_id: uuid.UUID,
+        data: UpdateContestRequest,
+        actor: User,
+    ) -> Contest | None:
+        res = await db.execute(select(Contest).where(Contest.id == contest_id))
+        contest = res.scalar_one_or_none()
+        if not contest:
+            return None
+        for k, v in data.model_dump(exclude_unset=True).items():
+            setattr(contest, k, v)
+        await db.commit()
+        await db.refresh(contest)
+        await AdminService.log_audit(
+            db=db,
+            actor=actor,
+            action="CONTEST_UPDATE",
+            resource="contest",
+            resource_id=str(contest.id),
+            details={"status": contest.status},
+        )
+        return contest
+
+    @staticmethod
+    async def delete_contest(
+        db: AsyncSession,
+        contest_id: uuid.UUID,
+        actor: User,
+    ) -> bool:
+        res = await db.execute(select(Contest).where(Contest.id == contest_id))
+        contest = res.scalar_one_or_none()
+        if not contest:
+            return False
+        contest.status = "ARCHIVED"
+        await db.commit()
+        await AdminService.log_audit(
+            db=db,
+            actor=actor,
+            action="CONTEST_ARCHIVE",
+            resource="contest",
+            resource_id=str(contest_id),
+            details={},
+        )
+        return True
+
+    @staticmethod
+    async def add_contest_problem(
+        db: AsyncSession,
+        contest_id: uuid.UUID,
+        data: AddContestProblemRequest,
+        actor: User,
+    ) -> ContestProblem:
+        cp = ContestProblem(
+            contest_id=contest_id,
+            problem_id=data.problem_id,
+            order_index=data.order_index,
+            points=data.points,
+        )
+        db.add(cp)
+        await db.commit()
+        await db.refresh(cp)
+        await AdminService.log_audit(
+            db=db,
+            actor=actor,
+            action="CONTEST_PROBLEM_ADD",
+            resource="contest_problem",
+            resource_id=str(cp.id),
+            details={"contest_id": str(contest_id), "problem_id": str(data.problem_id)},
+        )
+        return cp
+
+    @staticmethod
+    async def remove_contest_problem(
+        db: AsyncSession,
+        contest_id: uuid.UUID,
+        problem_id: uuid.UUID,
+        actor: User,
+    ) -> bool:
+        res = await db.execute(
+            select(ContestProblem).where(
+                ContestProblem.contest_id == contest_id,
+                ContestProblem.problem_id == problem_id,
+            )
+        )
+        cp = res.scalar_one_or_none()
+        if not cp:
+            return False
+        await db.delete(cp)
+        await db.commit()
+        await AdminService.log_audit(
+            db=db,
+            actor=actor,
+            action="CONTEST_PROBLEM_REMOVE",
+            resource="contest_problem",
+            resource_id=str(problem_id),
+            details={"contest_id": str(contest_id)},
+        )
+        return True
+
+    @staticmethod
+    async def get_contest_registrations(
+        db: AsyncSession,
+        contest_id: uuid.UUID,
+        page: int = 1,
+        page_size: int = 50,
+    ) -> dict[str, Any]:
+        count_res = await db.execute(
+            select(func.count(ContestRegistration.id)).where(ContestRegistration.contest_id == contest_id)
+        )
+        total = count_res.scalar() or 0
+        stmt = (
+            select(ContestRegistration, User.email, User.full_name)
+            .join(User, ContestRegistration.user_id == User.id)
+            .where(ContestRegistration.contest_id == contest_id)
+            .order_by(ContestRegistration.registered_at.desc())
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+        )
+        res = await db.execute(stmt)
+        registrations = []
+        for reg, email, full_name in res.all():
+            registrations.append({
+                "id": str(reg.id),
+                "user_id": str(reg.user_id),
+                "email": email,
+                "full_name": full_name,
+                "registered_at": reg.registered_at,
+            })
+        return {"total": total, "registrations": registrations, "page": page, "page_size": page_size}
+
+    # ============================================================
+    # 19. CODING PROBLEMS FULL MANAGEMENT (FEATURE 07)
+    # ============================================================
+    @staticmethod
+    async def create_coding_problem(
+        db: AsyncSession,
+        data: CreateCodingProblemRequest,
+        actor: User,
+    ) -> CodingProblem:
+        slug = data.slug or re.sub(r"[^a-z0-9]+", "-", data.title.lower()).strip("-") + f"-{uuid.uuid4().hex[:4]}"
+        prob = CodingProblem(
+            title=data.title,
+            slug=slug,
+            description=data.description,
+            difficulty=data.difficulty,
+            topic=data.topic,
+            constraints=data.constraints,
+            input_format=data.input_format,
+            output_format=data.output_format,
+            examples=data.examples,
+            starter_code=data.starter_code,
+            supported_languages=data.supported_languages,
+            test_cases=data.test_cases,
+            hidden_test_cases=data.hidden_test_cases,
+            tags=data.tags,
+            company_tags=data.company_tags,
+            role_tags=data.role_tags,
+            expected_time_complexity=data.expected_time_complexity,
+            expected_space_complexity=data.expected_space_complexity,
+            editorial=data.editorial,
+            solution_code=data.solution_code,
+            hints=data.hints,
+            status=data.status,
+            is_published=data.is_published,
+            is_featured=data.is_featured,
+            is_premium=data.is_premium,
+        )
+        db.add(prob)
+        await db.commit()
+        await db.refresh(prob)
+        await AdminService.log_audit(
+            db=db,
+            actor=actor,
+            action="CODING_PROBLEM_CREATE",
+            resource="coding_problem",
+            resource_id=str(prob.id),
+            details={"title": prob.title, "difficulty": prob.difficulty},
+        )
+        return prob
+
+    @staticmethod
+    async def update_coding_problem(
+        db: AsyncSession,
+        problem_id: uuid.UUID,
+        data: UpdateCodingProblemRequest,
+        actor: User,
+    ) -> CodingProblem | None:
+        res = await db.execute(select(CodingProblem).where(CodingProblem.id == problem_id))
+        prob = res.scalar_one_or_none()
+        if not prob:
+            return None
+        for k, v in data.model_dump(exclude_unset=True).items():
+            setattr(prob, k, v)
+        await db.commit()
+        await db.refresh(prob)
+        await AdminService.log_audit(
+            db=db,
+            actor=actor,
+            action="CODING_PROBLEM_UPDATE",
+            resource="coding_problem",
+            resource_id=str(prob.id),
+            details={"title": prob.title},
+        )
+        return prob
+
+    @staticmethod
+    async def delete_coding_problem(
+        db: AsyncSession,
+        problem_id: uuid.UUID,
+        actor: User,
+    ) -> bool:
+        res = await db.execute(select(CodingProblem).where(CodingProblem.id == problem_id))
+        prob = res.scalar_one_or_none()
+        if not prob:
+            return False
+        prob.status = "ARCHIVED"
+        prob.is_published = False
+        await db.commit()
+        await AdminService.log_audit(
+            db=db,
+            actor=actor,
+            action="CODING_PROBLEM_ARCHIVE",
+            resource="coding_problem",
+            resource_id=str(problem_id),
+            details={},
+        )
+        return True
+
+    # ============================================================
+    # 20. PRACTICE SETS MANAGEMENT (FEATURE 08)
+    # ============================================================
+    @staticmethod
+    async def list_practice_sets(
+        db: AsyncSession,
+        page: int = 1,
+        page_size: int = 20,
+        topic: str | None = None,
+        difficulty: str | None = None,
+        search: str | None = None,
+    ) -> dict[str, Any]:
+        query = select(PracticeSet)
+        if topic:
+            query = query.where(PracticeSet.topic.ilike(f"%{topic}%"))
+        if difficulty:
+            query = query.where(PracticeSet.difficulty == difficulty)
+        if search:
+            query = query.where(PracticeSet.title.ilike(f"%{search}%"))
+
+        count_query = select(func.count()).select_from(query.subquery())
+        total_res = await db.execute(count_query)
+        total = total_res.scalar() or 0
+
+        query = query.order_by(PracticeSet.created_at.desc()).offset((page - 1) * page_size).limit(page_size)
+        res = await db.execute(query)
+        items = res.scalars().all()
+        return {"items": items, "total": total, "page": page, "page_size": page_size}
+
+    @staticmethod
+    async def get_practice_set(
+        db: AsyncSession,
+        set_id: uuid.UUID,
+    ) -> PracticeSet | None:
+        res = await db.execute(select(PracticeSet).where(PracticeSet.id == set_id))
+        return res.scalar_one_or_none()
+
+    @staticmethod
+    async def create_practice_set(
+        db: AsyncSession,
+        data: CreatePracticeSetRequest,
+        actor: User,
+    ) -> PracticeSet:
+        slug = data.slug or re.sub(r"[^a-z0-9]+", "-", data.title.lower()).strip("-") + f"-{uuid.uuid4().hex[:4]}"
+        ps = PracticeSet(
+            title=data.title,
+            slug=slug,
+            description=data.description,
+            topic=data.topic,
+            subtopic=data.subtopic,
+            difficulty=data.difficulty,
+            role=data.role,
+            company=data.company,
+            duration_minutes=data.duration_minutes,
+            attempt_limit=data.attempt_limit,
+            is_premium=data.is_premium,
+            is_published=data.is_published,
+            is_featured=data.is_featured,
+        )
+        db.add(ps)
+        await db.commit()
+        await db.refresh(ps)
+        await AdminService.log_audit(
+            db=db,
+            actor=actor,
+            action="PRACTICE_SET_CREATE",
+            resource="practice_set",
+            resource_id=str(ps.id),
+            details={"title": ps.title},
+        )
+        return ps
+
+    @staticmethod
+    async def update_practice_set(
+        db: AsyncSession,
+        set_id: uuid.UUID,
+        data: UpdatePracticeSetRequest,
+        actor: User,
+    ) -> PracticeSet | None:
+        res = await db.execute(select(PracticeSet).where(PracticeSet.id == set_id))
+        ps = res.scalar_one_or_none()
+        if not ps:
+            return None
+        for k, v in data.model_dump(exclude_unset=True).items():
+            setattr(ps, k, v)
+        await db.commit()
+        await db.refresh(ps)
+        await AdminService.log_audit(
+            db=db,
+            actor=actor,
+            action="PRACTICE_SET_UPDATE",
+            resource="practice_set",
+            resource_id=str(ps.id),
+            details={"title": ps.title},
+        )
+        return ps
+
+    @staticmethod
+    async def delete_practice_set(
+        db: AsyncSession,
+        set_id: uuid.UUID,
+        actor: User,
+    ) -> bool:
+        res = await db.execute(select(PracticeSet).where(PracticeSet.id == set_id))
+        ps = res.scalar_one_or_none()
+        if not ps:
+            return False
+        ps.is_published = False
+        await db.commit()
+        await AdminService.log_audit(
+            db=db,
+            actor=actor,
+            action="PRACTICE_SET_ARCHIVE",
+            resource="practice_set",
+            resource_id=str(set_id),
+            details={},
+        )
+        return True
+
+    @staticmethod
+    async def add_practice_set_question(
+        db: AsyncSession,
+        set_id: uuid.UUID,
+        data: AddPracticeSetQuestionRequest,
+        actor: User,
+    ) -> PracticeSetQuestion:
+        psq = PracticeSetQuestion(
+            practice_set_id=set_id,
+            question_id=data.question_id,
+            order_index=data.order_index,
+            points=data.points,
+        )
+        db.add(psq)
+        await db.commit()
+        await db.refresh(psq)
+        await AdminService.log_audit(
+            db=db,
+            actor=actor,
+            action="PRACTICE_SET_QUESTION_ADD",
+            resource="practice_set_question",
+            resource_id=str(psq.id),
+            details={"practice_set_id": str(set_id), "question_id": data.question_id},
+        )
+        return psq
+
+    @staticmethod
+    async def remove_practice_set_question(
+        db: AsyncSession,
+        set_id: uuid.UUID,
+        question_id: str,
+        actor: User,
+    ) -> bool:
+        res = await db.execute(
+            select(PracticeSetQuestion).where(
+                PracticeSetQuestion.practice_set_id == set_id,
+                PracticeSetQuestion.question_id == question_id,
+            )
+        )
+        psq = res.scalar_one_or_none()
+        if not psq:
+            return False
+        await db.delete(psq)
+        await db.commit()
+        await AdminService.log_audit(
+            db=db,
+            actor=actor,
+            action="PRACTICE_SET_QUESTION_REMOVE",
+            resource="practice_set_question",
+            resource_id=question_id,
+            details={"practice_set_id": str(set_id)},
+        )
+        return True
+
+    # ============================================================
+    # 21. INTERVIEW CONFIGURATIONS / TEMPLATES (FEATURE 03)
+    # ============================================================
+    @staticmethod
+    async def list_interview_configs(
+        db: AsyncSession,
+        category: str | None = None,
+        difficulty: str | None = None,
+    ) -> list[InterviewConfiguration]:
+        query = select(InterviewConfiguration).where(InterviewConfiguration.is_active.is_(True))
+        if category:
+            query = query.where(InterviewConfiguration.category == category)
+        if difficulty:
+            query = query.where(InterviewConfiguration.difficulty == difficulty)
+        res = await db.execute(query.order_by(InterviewConfiguration.created_at.desc()))
+        return list(res.scalars().all())
+
+    @staticmethod
+    async def get_interview_config(
+        db: AsyncSession,
+        config_id: uuid.UUID,
+    ) -> InterviewConfiguration | None:
+        res = await db.execute(select(InterviewConfiguration).where(InterviewConfiguration.id == config_id))
+        return res.scalar_one_or_none()
+
+    @staticmethod
+    async def create_interview_config(
+        db: AsyncSession,
+        data: CreateInterviewConfigRequest,
+        actor: User,
+    ) -> InterviewConfiguration:
+        slug = data.slug or re.sub(r"[^a-z0-9]+", "-", data.title.lower()).strip("-") + f"-{uuid.uuid4().hex[:4]}"
+        cfg = InterviewConfiguration(
+            title=data.title,
+            slug=slug,
+            category=data.category,
+            target_role=data.target_role,
+            company_name=data.company_name,
+            difficulty=data.difficulty,
+            question_count=data.question_count,
+            duration_minutes=data.duration_minutes,
+            skill_coverage=data.skill_coverage,
+            question_selection_mode=data.question_selection_mode,
+            evaluation_criteria=data.evaluation_criteria,
+            scoring_weights=data.scoring_weights,
+            feedback_rules=data.feedback_rules,
+            ai_agent_key=data.ai_agent_key,
+            rag_enabled=data.rag_enabled,
+            voice_enabled=data.voice_enabled,
+            anti_cheating_required=data.anti_cheating_required,
+            is_active=data.is_active,
+            is_featured=data.is_featured,
+        )
+        db.add(cfg)
+        await db.commit()
+        await db.refresh(cfg)
+        await AdminService.log_audit(
+            db=db,
+            actor=actor,
+            action="INTERVIEW_CONFIG_CREATE",
+            resource="interview_config",
+            resource_id=str(cfg.id),
+            details={"title": cfg.title, "category": cfg.category},
+        )
+        return cfg
+
+    @staticmethod
+    async def update_interview_config(
+        db: AsyncSession,
+        config_id: uuid.UUID,
+        data: UpdateInterviewConfigRequest,
+        actor: User,
+    ) -> InterviewConfiguration | None:
+        res = await db.execute(select(InterviewConfiguration).where(InterviewConfiguration.id == config_id))
+        cfg = res.scalar_one_or_none()
+        if not cfg:
+            return None
+        for k, v in data.model_dump(exclude_unset=True).items():
+            setattr(cfg, k, v)
+        await db.commit()
+        await db.refresh(cfg)
+        await AdminService.log_audit(
+            db=db,
+            actor=actor,
+            action="INTERVIEW_CONFIG_UPDATE",
+            resource="interview_config",
+            resource_id=str(cfg.id),
+            details={"title": cfg.title},
+        )
+        return cfg
+
+    @staticmethod
+    async def delete_interview_config(
+        db: AsyncSession,
+        config_id: uuid.UUID,
+        actor: User,
+    ) -> bool:
+        res = await db.execute(select(InterviewConfiguration).where(InterviewConfiguration.id == config_id))
+        cfg = res.scalar_one_or_none()
+        if not cfg:
+            return False
+        cfg.is_active = False
+        await db.commit()
+        await AdminService.log_audit(
+            db=db,
+            actor=actor,
+            action="INTERVIEW_CONFIG_ARCHIVE",
+            resource="interview_config",
+            resource_id=str(config_id),
+            details={},
+        )
+        return True
+
+    # ============================================================
+    # 22. CAREER ROADMAPS (FEATURE 05)
+    # ============================================================
+    @staticmethod
+    async def list_career_roadmaps(
+        db: AsyncSession,
+        target_role: str | None = None,
+        difficulty: str | None = None,
+    ) -> list[CareerRoadmap]:
+        query = select(CareerRoadmap).where(CareerRoadmap.is_published.is_(True))
+        if target_role:
+            query = query.where(CareerRoadmap.target_role.ilike(f"%{target_role}%"))
+        if difficulty:
+            query = query.where(CareerRoadmap.difficulty == difficulty)
+        res = await db.execute(query.order_by(CareerRoadmap.created_at.desc()))
+        return list(res.scalars().all())
+
+    @staticmethod
+    async def get_career_roadmap(
+        db: AsyncSession,
+        roadmap_id: uuid.UUID,
+    ) -> CareerRoadmap | None:
+        res = await db.execute(select(CareerRoadmap).where(CareerRoadmap.id == roadmap_id))
+        return res.scalar_one_or_none()
+
+    @staticmethod
+    async def create_career_roadmap(
+        db: AsyncSession,
+        data: CreateCareerRoadmapRequest,
+        actor: User,
+    ) -> CareerRoadmap:
+        slug = data.slug or re.sub(r"[^a-z0-9]+", "-", data.title.lower()).strip("-") + f"-{uuid.uuid4().hex[:4]}"
+        crm = CareerRoadmap(
+            title=data.title,
+            slug=slug,
+            target_role=data.target_role,
+            description=data.description,
+            difficulty=data.difficulty,
+            estimated_weeks=data.estimated_weeks,
+            prerequisites=data.prerequisites,
+            skills=data.skills,
+            stages=data.stages,
+            is_published=data.is_published,
+            is_featured=data.is_featured,
+        )
+        db.add(crm)
+        await db.commit()
+        await db.refresh(crm)
+        await AdminService.log_audit(
+            db=db,
+            actor=actor,
+            action="CAREER_ROADMAP_CREATE",
+            resource="career_roadmap",
+            resource_id=str(crm.id),
+            details={"title": crm.title, "target_role": crm.target_role},
+        )
+        return crm
+
+    @staticmethod
+    async def update_career_roadmap(
+        db: AsyncSession,
+        roadmap_id: uuid.UUID,
+        data: UpdateCareerRoadmapRequest,
+        actor: User,
+    ) -> CareerRoadmap | None:
+        res = await db.execute(select(CareerRoadmap).where(CareerRoadmap.id == roadmap_id))
+        crm = res.scalar_one_or_none()
+        if not crm:
+            return None
+        for k, v in data.model_dump(exclude_unset=True).items():
+            setattr(crm, k, v)
+        await db.commit()
+        await db.refresh(crm)
+        await AdminService.log_audit(
+            db=db,
+            actor=actor,
+            action="CAREER_ROADMAP_UPDATE",
+            resource="career_roadmap",
+            resource_id=str(crm.id),
+            details={"title": crm.title},
+        )
+        return crm
+
+    @staticmethod
+    async def delete_career_roadmap(
+        db: AsyncSession,
+        roadmap_id: uuid.UUID,
+        actor: User,
+    ) -> bool:
+        res = await db.execute(select(CareerRoadmap).where(CareerRoadmap.id == roadmap_id))
+        crm = res.scalar_one_or_none()
+        if not crm:
+            return False
+        crm.is_published = False
+        await db.commit()
+        await AdminService.log_audit(
+            db=db,
+            actor=actor,
+            action="CAREER_ROADMAP_ARCHIVE",
+            resource="career_roadmap",
+            resource_id=str(roadmap_id),
+            details={},
+        )
+        return True
+
+    # ============================================================
+    # 23. CANDIDATE 360 VIEW (FEATURE 14)
+    # ============================================================
+    @staticmethod
+    async def get_candidate_360(
+        db: AsyncSession,
+        user_id: uuid.UUID,
+    ) -> dict[str, Any] | None:
+        u_res = await db.execute(select(User).where(User.id == user_id))
+        user = u_res.scalar_one_or_none()
+        if not user:
+            return None
+
+        p_res = await db.execute(select(UserProfile).where(UserProfile.user_id == user_id))
+        prof = p_res.scalar_one_or_none()
+
+        r_res = await db.execute(
+            select(Resume).where(Resume.user_id == user_id).order_by(Resume.uploaded_at.desc()).limit(1)
+        )
+        resume = r_res.scalar_one_or_none()
+
+        i_res = await db.execute(
+            select(Interview).where(Interview.user_id == user_id).order_by(Interview.created_at.desc()).limit(10)
+        )
+        interviews = [
+            {
+                "id": str(i.id),
+                "job_role": i.job_role,
+                "difficulty": i.difficulty,
+                "status": i.status,
+                "overall_score": getattr(i, "score", None),
+                "created_at": i.created_at,
+            }
+            for i in i_res.scalars().all()
+        ]
+
+        cs_res = await db.execute(
+            select(CodingSubmission).where(CodingSubmission.user_id == user_id).order_by(CodingSubmission.created_at.desc()).limit(10)
+        )
+        submissions = [
+            {
+                "id": str(cs.id),
+                "problem_id": str(cs.problem_id),
+                "status": cs.status,
+                "language": cs.language,
+                "runtime_ms": getattr(cs, "execution_time", getattr(cs, "runtime_ms", None)),
+                "created_at": cs.created_at,
+            }
+            for cs in cs_res.scalars().all()
+        ]
+
+        lp_res = await db.execute(select(LearningProfile).where(LearningProfile.user_id == user_id))
+        lp = lp_res.scalar_one_or_none()
+
+        sub_res = await db.execute(
+            select(UserSubscription, SubscriptionPlan.name)
+            .join(SubscriptionPlan, UserSubscription.plan_id == SubscriptionPlan.id)
+            .where(UserSubscription.user_id == user_id)
+            .order_by(UserSubscription.created_at.desc())
+        )
+        subscriptions = [
+            {
+                "id": str(s.id),
+                "plan_name": plan_name,
+                "status": s.status,
+                "starts_at": s.starts_at,
+                "expires_at": s.expires_at,
+            }
+            for s, plan_name in sub_res.all()
+        ]
+
+        pay_res = await db.execute(
+            select(PaymentTransaction).where(PaymentTransaction.user_id == user_id).order_by(PaymentTransaction.created_at.desc()).limit(10)
+        )
+        payments = [
+            {
+                "id": str(pt.id),
+                "amount": pt.amount,
+                "currency": pt.currency,
+                "status": pt.status,
+                "created_at": pt.created_at,
+            }
+            for pt in pay_res.scalars().all()
+        ]
+
+        st_res = await db.execute(
+            select(SupportTicket).where(SupportTicket.user_id == user_id).order_by(SupportTicket.created_at.desc()).limit(10)
+        )
+        tickets = [
+            {
+                "id": str(st.id),
+                "subject": st.subject,
+                "status": st.status,
+                "priority": st.priority,
+                "category": st.category,
+                "created_at": st.created_at,
+            }
+            for st in st_res.scalars().all()
+        ]
+
+        ach_res = await db.execute(
+            select(UserAchievement).where(UserAchievement.user_id == user_id).order_by(UserAchievement.unlocked_at.desc()).limit(20)
+        )
+        achievements = [
+            {
+                "id": str(ua.id),
+                "achievement_id": ua.achievement_id,
+                "unlocked_at": ua.unlocked_at,
+            }
+            for ua in ach_res.scalars().all()
+        ]
+
+        return {
+            "user": {
+                "id": str(user.id),
+                "email": user.email,
+                "full_name": user.full_name,
+                "role": user.role,
+                "is_active": user.is_active,
+                "is_verified": user.is_verified,
+                "created_at": user.created_at,
+            },
+            "profile": {
+                "bio": getattr(prof, "bio", None) if prof else None,
+                "target_role": getattr(prof, "target_role", None) if prof else None,
+                "years_experience": getattr(prof, "experience_years", getattr(prof, "years_experience", None)) if prof else None,
+                "skills": getattr(prof, "skills", []) if prof else [],
+            } if prof else None,
+            "resume": {
+                "id": str(resume.id),
+                "ats_score": getattr(resume, "ats_score", None),
+                "skills": getattr(resume, "skills", []),
+            } if resume else None,
+            "interviews": interviews,
+            "coding_submissions": submissions,
+            "learning_profile": {
+                "readiness_score": lp.readiness_score,
+                "target_role": lp.target_role,
+                "weak_topics": lp.weak_topics,
+            } if lp else None,
+            "subscriptions": subscriptions,
+            "payments": payments,
+            "support_tickets": tickets,
+            "achievements": achievements,
+        }
+
+    # ============================================================
+    # 24. CANDIDATE DASHBOARD CONFIGURATION (FEATURE 16)
+    # ============================================================
+    @staticmethod
+    async def get_dashboard_config(db: AsyncSession) -> dict[str, Any]:
+        default_config = {
+            "show_welcome": True,
+            "show_readiness": True,
+            "show_ats": True,
+            "show_interview": True,
+            "show_weak_topics": True,
+            "show_daily_practice": True,
+            "show_contests": True,
+            "show_practice": True,
+            "show_learning": True,
+            "show_resources": True,
+            "show_coding": True,
+            "show_achievements": True,
+            "show_subscription": True,
+            "show_notifications": True,
+            "show_support": True,
+            "show_companies": True,
+        }
+        res = await db.execute(
+            select(SystemSetting).where(SystemSetting.key == "candidate_dashboard_config")
+        )
+        st = res.scalar_one_or_none()
+        if st and isinstance(st.value, dict):
+            return {**default_config, **st.value}
+        return default_config
+
+    @staticmethod
+    async def update_dashboard_config(
+        db: AsyncSession,
+        config_data: dict[str, Any],
+        actor: User,
+    ) -> dict[str, Any]:
+        res = await db.execute(
+            select(SystemSetting).where(SystemSetting.key == "candidate_dashboard_config")
+        )
+        st = res.scalar_one_or_none()
+        if not st:
+            st = SystemSetting(
+                key="candidate_dashboard_config",
+                value=config_data,
+                category="CandidateExperience",
+                description="Controls visibility of Candidate Dashboard modules",
+                is_sensitive=False,
+                updated_by=actor.email,
+            )
+            db.add(st)
+        else:
+            st.value = config_data
+            st.updated_by = actor.email
+        await db.commit()
+        await AdminService.log_audit(
+            db=db,
+            actor=actor,
+            action="DASHBOARD_CONFIG_UPDATE",
+            resource="system_setting",
+            resource_id="candidate_dashboard_config",
+            details=config_data,
+        )
+        return st.value
+
+    # ============================================================
+    # 25. FEATURED CONTENT AGGREGATOR (FEATURE 15)
+    # ============================================================
+    @staticmethod
+    async def get_featured_content(db: AsyncSession) -> dict[str, Any]:
+        c_res = await db.execute(
+            select(Contest).where(Contest.is_featured.is_(True), Contest.status.in_(["UPCOMING", "LIVE", "REGISTRATION_OPEN"])).limit(1)
+        )
+        f_contest = c_res.scalar_one_or_none()
+
+        ps_res = await db.execute(
+            select(PracticeSet).where(PracticeSet.is_featured.is_(True), PracticeSet.is_published.is_(True)).limit(1)
+        )
+        f_practice_set = ps_res.scalar_one_or_none()
+
+        prob_res = await db.execute(
+            select(CodingProblem).where(CodingProblem.is_featured.is_(True), CodingProblem.is_published.is_(True)).limit(1)
+        )
+        f_coding = prob_res.scalar_one_or_none()
+
+        comp_res = await db.execute(
+            select(Company).where(Company.is_featured.is_(True), Company.is_active.is_(True)).limit(1)
+        )
+        f_company = comp_res.scalar_one_or_none()
+
+        res_res = await db.execute(
+            select(LearningResource).where(LearningResource.is_featured.is_(True), LearningResource.is_published.is_(True)).limit(1)
+        )
+        f_resource = res_res.scalar_one_or_none()
+
+        crm_res = await db.execute(
+            select(CareerRoadmap).where(CareerRoadmap.is_featured.is_(True), CareerRoadmap.is_published.is_(True)).limit(1)
+        )
+        f_roadmap = crm_res.scalar_one_or_none()
+
+        ic_res = await db.execute(
+            select(InterviewConfiguration).where(InterviewConfiguration.is_featured.is_(True), InterviewConfiguration.is_active.is_(True)).limit(1)
+        )
+        f_interview = ic_res.scalar_one_or_none()
+
+        return {
+            "contest": {
+                "id": str(f_contest.id),
+                "title": f_contest.title,
+                "slug": f_contest.slug,
+                "start_time": f_contest.start_time,
+                "end_time": f_contest.end_time,
+                "status": f_contest.status,
+            } if f_contest else None,
+            "practice_set": {
+                "id": str(f_practice_set.id),
+                "title": f_practice_set.title,
+                "topic": f_practice_set.topic,
+                "difficulty": f_practice_set.difficulty,
+                "duration_minutes": f_practice_set.duration_minutes,
+            } if f_practice_set else None,
+            "coding_problem": {
+                "id": str(f_coding.id),
+                "title": f_coding.title,
+                "difficulty": f_coding.difficulty,
+                "topic": f_coding.topic,
+            } if f_coding else None,
+            "company": {
+                "id": str(f_company.id),
+                "name": f_company.name,
+                "industry": f_company.industry,
+                "logo_url": f_company.logo_url,
+            } if f_company else None,
+            "resource": {
+                "id": str(f_resource.id),
+                "title": f_resource.title,
+                "topic": f_resource.topic,
+                "resource_type": f_resource.resource_type,
+                "url": f_resource.url,
+            } if f_resource else None,
+            "roadmap": {
+                "id": str(f_roadmap.id),
+                "title": f_roadmap.title,
+                "target_role": f_roadmap.target_role,
+                "estimated_weeks": f_roadmap.estimated_weeks,
+            } if f_roadmap else None,
+            "interview_config": {
+                "id": str(f_interview.id),
+                "title": f_interview.title,
+                "category": f_interview.category,
+                "target_role": f_interview.target_role,
+                "difficulty": f_interview.difficulty,
+            } if f_interview else None,
+        }
+
+    # ============================================================
+    # 26. CANDIDATE DASHBOARD AGGREGATED SUMMARY
+    # ============================================================
+    @staticmethod
+    async def get_candidate_dashboard_summary(
+        db: AsyncSession,
+        user_id: uuid.UUID,
+    ) -> dict[str, Any]:
+        config = await AdminService.get_dashboard_config(db)
+        featured = await AdminService.get_featured_content(db)
+
+        lp_res = await db.execute(select(LearningProfile).where(LearningProfile.user_id == user_id))
+        lp = lp_res.scalar_one_or_none()
+
+        r_res = await db.execute(
+            select(Resume).where(Resume.user_id == user_id).order_by(Resume.uploaded_at.desc()).limit(1)
+        )
+        resume = r_res.scalar_one_or_none()
+
+        i_res = await db.execute(
+            select(Interview).where(Interview.user_id == user_id).order_by(Interview.created_at.desc()).limit(1)
+        )
+        recent_interview = i_res.scalar_one_or_none()
+
+        today_date = date.today()
+        dp_res = await db.execute(
+            select(DailyPracticePlan).where(DailyPracticePlan.user_id == user_id, DailyPracticePlan.plan_date == today_date)
+        )
+        daily_plan = dp_res.scalar_one_or_none()
+
+        c_res = await db.execute(
+            select(Contest).where(Contest.status.in_(["UPCOMING", "LIVE", "REGISTRATION_OPEN"])).order_by(Contest.start_time.asc()).limit(1)
+        )
+        upcoming_contest = c_res.scalar_one_or_none()
+
+        notif_res = await db.execute(
+            select(func.count(Notification.id)).where(Notification.user_id == user_id, Notification.is_read.is_(False))
+        )
+        unread_notifications = notif_res.scalar() or 0
+
+        sub_res = await db.execute(
+            select(UserSubscription, SubscriptionPlan.name, SubscriptionPlan.slug)
+            .join(SubscriptionPlan, UserSubscription.plan_id == SubscriptionPlan.id)
+            .where(UserSubscription.user_id == user_id, UserSubscription.status == "active")
+            .limit(1)
+        )
+        sub_row = sub_res.first()
+
+        # Coding progress
+        solved_count_res = await db.execute(
+            select(func.count(func.distinct(CodingSubmission.problem_id)))
+            .where(CodingSubmission.user_id == user_id, CodingSubmission.status == "ACCEPTED")
+        )
+        problems_solved = solved_count_res.scalar() or 0
+
+        # Achievements progress
+        ach_count_res = await db.execute(
+            select(func.count(UserAchievement.id)).where(UserAchievement.user_id == user_id)
+        )
+        achievements_unlocked = ach_count_res.scalar() or 0
+
+        return {
+            "config": config,
+            "featured": featured,
+            "readiness": {
+                "score": lp.readiness_score if lp else 65.0,
+                "target_role": lp.target_role if lp else "Full Stack Developer",
+                "weak_topics": lp.weak_topics if lp else ["System Architecture", "SQL Queries"],
+            },
+            "ats": {
+                "score": getattr(resume, "ats_score", None) if resume else None,
+                "resume_id": str(resume.id) if resume else None,
+            },
+            "recent_interview": {
+                "id": str(recent_interview.id),
+                "status": recent_interview.status,
+                "job_role": recent_interview.job_role,
+                "overall_score": getattr(recent_interview, "overall_score", getattr(recent_interview, "score", None)),
+            } if recent_interview else None,
+            "daily_plan": {
+                "id": str(daily_plan.id),
+                "plan_date": str(daily_plan.plan_date),
+                "items": daily_plan.items,
+                "is_completed": daily_plan.is_completed,
+            } if daily_plan else None,
+            "upcoming_contest": {
+                "id": str(upcoming_contest.id),
+                "title": upcoming_contest.title,
+                "slug": upcoming_contest.slug,
+                "start_time": upcoming_contest.start_time,
+                "status": upcoming_contest.status,
+            } if upcoming_contest else None,
+            "coding_progress": {
+                "problems_solved": problems_solved,
+            },
+            "achievements": {
+                "unlocked_count": achievements_unlocked,
+            },
+            "subscription": {
+                "plan_name": sub_row[1] if sub_row else "Free",
+                "plan_slug": sub_row[2] if sub_row else "free",
+                "status": sub_row[0].status if sub_row else "active",
+            },
+            "unread_notifications": unread_notifications,
+        }
+
+    # ============================================================
+    # 27. INITIAL SYSTEM SEEDER (RUNS ON STARTUP)
     # ============================================================
     @staticmethod
     async def seed_default_admin_data(db: AsyncSession) -> None:

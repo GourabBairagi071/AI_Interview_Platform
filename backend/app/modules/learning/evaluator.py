@@ -179,6 +179,51 @@ async def evaluate_user_skills(
         skill_data[can_name]["sources"].append(f"coding_{prob.slug}")
 
     # -------------------------------------------------------------
+    # 3b. Extract performance from Completed Candidate Assignments
+    # -------------------------------------------------------------
+    try:
+        from app.modules.assignments.model import CandidateAssignment, CandidateAssignmentProgress
+        assign_res = await db.execute(
+            select(CandidateAssignmentProgress, CandidateAssignment)
+            .join(CandidateAssignment, CandidateAssignmentProgress.assignment_id == CandidateAssignment.id)
+            .where(
+                CandidateAssignmentProgress.candidate_id == user_id,
+                CandidateAssignmentProgress.status == "COMPLETED",
+            )
+        )
+        for prog, assign in assign_res.all():
+            if prog.score is None:
+                continue
+            skill_target = None
+            if assign.content_payload and isinstance(assign.content_payload, dict):
+                skill_target = assign.content_payload.get("skill") or assign.content_payload.get("topic")
+
+            matched = []
+            if skill_target:
+                can_name, category = normalize_skill_name(str(skill_target))
+                matched.append((can_name, category))
+            else:
+                matched = _infer_skills_from_text(assign.title)
+                if not matched:
+                    can_name, category = normalize_skill_name(assign.title)
+                    matched.append((can_name, category))
+
+            is_coding = assign.assignment_type in [
+                "CODING_PROBLEM", "PRACTICE_SET", "CUSTOM_TASK", "ASSESSMENT", "CONTEST"
+            ]
+            for can_name, category in matched:
+                _ensure_skill(can_name, category)
+                if is_coding:
+                    skill_data[can_name]["coding_scores"].append(float(prog.score))
+                    skill_data[can_name]["coding_attempts"] += 1
+                else:
+                    skill_data[can_name]["interview_scores"].append(float(prog.score))
+                    skill_data[can_name]["interview_attempts"] += 1
+                skill_data[can_name]["sources"].append(f"assignment_{assign.id}")
+    except Exception as e:
+        logger.warning(f"Failed to extract assignment performance in evaluator: {e}")
+
+    # -------------------------------------------------------------
     # 4. Compute Normalized Scores, Confidence, and Status
     # -------------------------------------------------------------
     computed_skills: dict[str, dict[str, Any]] = {}
@@ -275,9 +320,11 @@ async def sync_and_persist_skill_performances(
     eval_results = await evaluate_user_skills(db, user_id, thresholds)
     now = datetime.now(timezone.utc)
 
-    # Fetch existing skill records
+    # Fetch existing skill records with row lock to prevent race conditions
     existing_res = await db.execute(
-        select(SkillPerformance).where(SkillPerformance.user_id == user_id)
+        select(SkillPerformance)
+        .where(SkillPerformance.user_id == user_id)
+        .with_for_update()
     )
     existing_map = {sp.canonical_skill: sp for sp in existing_res.scalars().all()}
 

@@ -142,9 +142,28 @@ app.include_router(
 )
 
 from app.modules.admin.router import router as admin_router
+from app.modules.admin.candidate_router import router as candidate_router
 
 app.include_router(
     admin_router,
+    prefix="/api/v1",
+)
+app.include_router(
+    candidate_router,
+    prefix="/api/v1",
+)
+
+from app.modules.assignments.router import (
+    admin_assignment_router,
+    candidate_assignment_router,
+)
+
+app.include_router(
+    admin_assignment_router,
+    prefix="/api/v1",
+)
+app.include_router(
+    candidate_assignment_router,
     prefix="/api/v1",
 )
 

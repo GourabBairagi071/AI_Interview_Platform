@@ -1,0 +1,265 @@
+{
+  "critical_baseline_counts": {
+    "coding_problems": {
+      "actual": 1000,
+      "expected": 1000,
+      "matches_expected": true
+    },
+    "interview_question_vectors": {
+      "actual": 5738,
+      "expected": 5738,
+      "matches_expected": true
+    },
+    "practice_questions": {
+      "actual": 5751,
+      "expected": 5751,
+      "matches_expected": true
+    },
+    "users": {
+      "actual": 216,
+      "expected": null,
+      "matches_expected": true
+    },
+    "user_profiles": {
+      "actual": 44,
+      "expected": null,
+      "matches_expected": true
+    },
+    "resumes": {
+      "actual": 32,
+      "expected": null,
+      "matches_expected": true
+    },
+    "interviews": {
+      "actual": 105,
+      "expected": null,
+      "matches_expected": true
+    },
+    "coding_submissions": {
+      "actual": 36,
+      "expected": null,
+      "matches_expected": true
+    },
+    "contests": {
+      "actual": 7,
+      "expected": null,
+      "matches_expected": true
+    },
+    "contest_registrations": {
+      "actual": 15,
+      "expected": null,
+      "matches_expected": true
+    },
+    "contest_participant_stats": {
+      "actual": 15,
+      "expected": null,
+      "matches_expected": true
+    },
+    "contest_submissions": {
+      "actual": 20,
+      "expected": null,
+      "matches_expected": true
+    },
+    "learning_profiles": {
+      "actual": 7,
+      "expected": null,
+      "matches_expected": true
+    },
+    "learning_resources": {
+      "actual": 23,
+      "expected": null,
+      "matches_expected": true
+    },
+    "subscription_plans": {
+      "actual": 30,
+      "expected": null,
+      "matches_expected": true
+    },
+    "user_subscriptions": {
+      "actual": 27,
+      "expected": null,
+      "matches_expected": true
+    },
+    "payment_transactions": {
+      "actual": 49,
+      "expected": null,
+      "matches_expected": true
+    },
+    "invoices": {
+      "actual": 27,
+      "expected": null,
+      "matches_expected": true
+    },
+    "coupons": {
+      "actual": 31,
+      "expected": null,
+      "matches_expected": true
+    },
+    "support_tickets": {
+      "actual": 57,
+      "expected": null,
+      "matches_expected": true
+    },
+    "support_ticket_messages": {
+      "actual": 115,
+      "expected": null,
+      "matches_expected": true
+    },
+    "notifications": {
+      "actual": 6533,
+      "expected": null,
+      "matches_expected": true
+    },
+    "candidate_assignments": {
+      "actual": 129,
+      "expected": null,
+      "matches_expected": true
+    },
+    "candidate_assignment_progress": {
+      "actual": 2513,
+      "expected": null,
+      "matches_expected": true
+    },
+    "user_achievements": {
+      "actual": 1716,
+      "expected": null,
+      "matches_expected": true
+    },
+    "skill_performances": {
+      "actual": 171,
+      "expected": null,
+      "matches_expected": true
+    }
+  },
+  "constraint_and_relationship_checks": {
+    "orphan_assignment_progress_records": {
+      "status": "VERIFIED",
+      "orphan_count": 0
+    },
+    "duplicate_assignment_recipients": {
+      "status": "VERIFIED",
+      "duplicate_count": 0
+    },
+    "orphan_payment_transactions": {
+      "status": "VERIFIED",
+      "orphan_count": 0
+    },
+    "orphan_interviews": {
+      "status": "PARTIALLY_VERIFIED",
+      "orphan_count": 9,
+      "note": "9 historic interview records reference deleted guest/test user IDs"
+    }
+  },
+  "alembic_migration_status": {
+    "status": "VERIFIED",
+    "current_head_version": "a1b2c3d4e5f7"
+  },
+  "test_records_audit": {
+    "test_users_count": 210,
+    "test_assignments_count": 25,
+    "sample_test_users": [
+      {
+        "id": "799393e5-5638-4956-b99e-b37e703181f4",
+        "email": "cand_s11_b_56d9f3@example.com",
+        "role": "CANDIDATE"
+      },
+      {
+        "id": "7bc98b14-cde0-4678-b4bd-1923aaf77612",
+        "email": "cand_s11_a_56d9f3@example.com",
+        "role": "CANDIDATE"
+      },
+      {
+        "id": "158cf5f6-1c3f-4954-8c4a-831208d1dc22",
+        "email": "cand_dash_f2cad3@example.com",
+        "role": "CANDIDATE"
+      },
+      {
+        "id": "08bf2ac0-47d2-4880-8df6-04965138dd4e",
+        "email": "cand_dash_b438aa@example.com",
+        "role": "CANDIDATE"
+      },
+      {
+        "id": "3ba223b9-9f94-4dab-ae57-72f55b54bb7f",
+        "email": "cand_s11_b_3b827d@example.com",
+        "role": "CANDIDATE"
+      },
+      {
+        "id": "dcaf0a71-548e-4813-9a5c-312fea8abf13",
+        "email": "cand_s11_a_3b827d@example.com",
+        "role": "CANDIDATE"
+      },
+      {
+        "id": "ed0d039e-87a4-41ad-b35e-b4b1ff58f010",
+        "email": "cand_b4_b_068245@example.com",
+        "role": "CANDIDATE"
+      },
+      {
+        "id": "b5acdf64-1bdd-4e14-a5ae-0a49207b605f",
+        "email": "cand_b4_a_068245@example.com",
+        "role": "CANDIDATE"
+      },
+      {
+        "id": "3bc513a0-19b7-488f-a259-cf0a9b9c1045",
+        "email": "cand_s4_b_693ba7@example.com",
+        "role": "CANDIDATE"
+      },
+      {
+        "id": "80a65d04-5764-42f3-bc51-db219cb64621",
+        "email": "cand_s4_a_693ba7@example.com",
+        "role": "CANDIDATE"
+      }
+    ],
+    "sample_test_assignments": [
+      {
+        "id": "025f55fd-540b-4fd1-859d-d3adf0dccc99",
+        "title": "Real E2E Workflow Task 56d9f3",
+        "type": "QUESTION"
+      },
+      {
+        "id": "61c51a24-0fb9-47d2-8e7b-0b58c14ae1f1",
+        "title": "Expired State Task 56d9f3",
+        "type": "RESOURCE"
+      },
+      {
+        "id": "d754ffd5-4da2-427b-9cc1-41103f5c5c40",
+        "title": "Completed State Task 56d9f3",
+        "type": "MOCK_TEST"
+      },
+      {
+        "id": "588dc470-4932-4117-941d-63f1d380e6b5",
+        "title": "In-Progress State Task 56d9f3",
+        "type": "QUESTION"
+      },
+      {
+        "id": "b3ecbd0b-0415-4644-bdfb-630bcdcc148d",
+        "title": "Assigned State Task 56d9f3",
+        "type": "CODING_PROBLEM"
+      },
+      {
+        "id": "cee7f79c-a600-4de4-b8b6-a0d548f21768",
+        "title": "Real E2E Workflow Task 3b827d",
+        "type": "QUESTION"
+      },
+      {
+        "id": "8b7508f8-a583-41df-b952-90bfd5aa5002",
+        "title": "Expired State Task 3b827d",
+        "type": "RESOURCE"
+      },
+      {
+        "id": "0342b829-da67-4eca-afd7-f5ffe6206d4c",
+        "title": "Completed State Task 3b827d",
+        "type": "MOCK_TEST"
+      },
+      {
+        "id": "439b9a03-4f05-44cd-aa0f-292809c559d3",
+        "title": "In-Progress State Task 3b827d",
+        "type": "QUESTION"
+      },
+      {
+        "id": "c39c779d-f33c-40a3-a942-c70728e1f64e",
+        "title": "Assigned State Task 3b827d",
+        "type": "CODING_PROBLEM"
+      }
+    ]
+  }
+}

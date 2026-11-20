@@ -543,3 +543,258 @@ class LearningStatsResponse(BaseModel):
     total_resources: int
     weak_topics: list[dict[str, Any]]
     popular_skills: list[dict[str, Any]]
+
+
+# ----------------------------------------------------
+# Contests Full Management (Feature 01)
+# ----------------------------------------------------
+class CreateContestRequest(BaseModel):
+    title: str
+    slug: str | None = None
+    description: str
+    start_time: datetime
+    end_time: datetime
+    duration_minutes: int = 90
+    status: str = "UPCOMING"
+    max_participants: int | None = None
+    is_proctored: bool = False
+    is_featured: bool = False
+    scoring_type: str = "ICPC"
+    penalty_per_wrong_attempt_mins: int = 20
+    rules: str | None = None
+    allowed_languages: str | None = None
+
+
+class UpdateContestRequest(BaseModel):
+    title: str | None = None
+    description: str | None = None
+    start_time: datetime | None = None
+    end_time: datetime | None = None
+    duration_minutes: int | None = None
+    status: str | None = None
+    max_participants: int | None = None
+    is_proctored: bool | None = None
+    is_featured: bool | None = None
+    scoring_type: str | None = None
+    penalty_per_wrong_attempt_mins: int | None = None
+    rules: str | None = None
+    allowed_languages: str | None = None
+
+
+class AddContestProblemRequest(BaseModel):
+    problem_id: UUID
+    order_index: int = 0
+    points: int = 100
+
+
+# ----------------------------------------------------
+# Coding Problems Management (Feature 07)
+# ----------------------------------------------------
+class CreateCodingProblemRequest(BaseModel):
+    title: str
+    slug: str | None = None
+    description: str
+    difficulty: str = "Medium"
+    topic: str
+    constraints: str | None = None
+    input_format: str | None = None
+    output_format: str | None = None
+    examples: str | None = None
+    starter_code: str | None = None
+    supported_languages: str | None = None
+    test_cases: str | None = None
+    hidden_test_cases: str | None = None
+    tags: str | None = None
+    company_tags: str | None = None
+    role_tags: str | None = None
+    expected_time_complexity: str | None = None
+    expected_space_complexity: str | None = None
+    editorial: str | None = None
+    solution_code: str | None = None
+    hints: str | None = None
+    status: str = "PUBLISHED"
+    is_published: bool = True
+    is_featured: bool = False
+    is_premium: bool = False
+
+
+class UpdateCodingProblemRequest(BaseModel):
+    title: str | None = None
+    description: str | None = None
+    difficulty: str | None = None
+    topic: str | None = None
+    constraints: str | None = None
+    input_format: str | None = None
+    output_format: str | None = None
+    examples: str | None = None
+    starter_code: str | None = None
+    supported_languages: str | None = None
+    test_cases: str | None = None
+    hidden_test_cases: str | None = None
+    tags: str | None = None
+    company_tags: str | None = None
+    role_tags: str | None = None
+    expected_time_complexity: str | None = None
+    expected_space_complexity: str | None = None
+    editorial: str | None = None
+    solution_code: str | None = None
+    hints: str | None = None
+    status: str | None = None
+    is_published: bool | None = None
+    is_featured: bool | None = None
+    is_premium: bool | None = None
+
+
+# ----------------------------------------------------
+# Practice Sets Management (Feature 08)
+# ----------------------------------------------------
+class CreatePracticeSetRequest(BaseModel):
+    title: str
+    slug: str | None = None
+    description: str
+    topic: str
+    subtopic: str | None = None
+    difficulty: str = "Intermediate"
+    role: str | None = None
+    company: str | None = None
+    duration_minutes: int = 45
+    attempt_limit: int = 3
+    is_premium: bool = False
+    is_published: bool = True
+    is_featured: bool = False
+
+
+class UpdatePracticeSetRequest(BaseModel):
+    title: str | None = None
+    description: str | None = None
+    topic: str | None = None
+    subtopic: str | None = None
+    difficulty: str | None = None
+    role: str | None = None
+    company: str | None = None
+    duration_minutes: int | None = None
+    attempt_limit: int | None = None
+    is_premium: bool | None = None
+    is_published: bool | None = None
+    is_featured: bool | None = None
+
+
+class AddPracticeSetQuestionRequest(BaseModel):
+    question_id: str
+    order_index: int = 0
+    points: int = 10
+
+
+# ----------------------------------------------------
+# Interview Configurations (Templates) (Feature 03)
+# ----------------------------------------------------
+class CreateInterviewConfigRequest(BaseModel):
+    title: str
+    slug: str | None = None
+    category: str = "Technical"
+    target_role: str
+    company_name: str | None = None
+    difficulty: str = "Medium"
+    question_count: int = 5
+    duration_minutes: int = 30
+    skill_coverage: list[str] = Field(default_factory=list)
+    question_selection_mode: str = "adaptive"
+    evaluation_criteria: dict[str, Any] = Field(default_factory=dict)
+    scoring_weights: dict[str, Any] = Field(default_factory=dict)
+    feedback_rules: dict[str, Any] = Field(default_factory=dict)
+    ai_agent_key: str | None = "technical_interviewer"
+    rag_enabled: bool = True
+    voice_enabled: bool = True
+    anti_cheating_required: bool = False
+    is_active: bool = True
+    is_featured: bool = False
+
+
+class UpdateInterviewConfigRequest(BaseModel):
+    title: str | None = None
+    category: str | None = None
+    target_role: str | None = None
+    company_name: str | None = None
+    difficulty: str | None = None
+    question_count: int | None = None
+    duration_minutes: int | None = None
+    skill_coverage: list[str] | None = None
+    question_selection_mode: str | None = None
+    evaluation_criteria: dict[str, Any] | None = None
+    scoring_weights: dict[str, Any] | None = None
+    feedback_rules: dict[str, Any] | None = None
+    ai_agent_key: str | None = None
+    rag_enabled: bool | None = None
+    voice_enabled: bool | None = None
+    anti_cheating_required: bool | None = None
+    is_active: bool | None = None
+    is_featured: bool | None = None
+
+
+# ----------------------------------------------------
+# Career Roadmaps (Feature 05)
+# ----------------------------------------------------
+class CreateCareerRoadmapRequest(BaseModel):
+    title: str
+    slug: str | None = None
+    target_role: str
+    description: str
+    difficulty: str = "Intermediate"
+    estimated_weeks: int = 12
+    prerequisites: list[str] = Field(default_factory=list)
+    skills: list[str] = Field(default_factory=list)
+    stages: list[dict[str, Any]] = Field(default_factory=list)
+    is_published: bool = True
+    is_featured: bool = False
+
+
+class UpdateCareerRoadmapRequest(BaseModel):
+    title: str | None = None
+    target_role: str | None = None
+    description: str | None = None
+    difficulty: str | None = None
+    estimated_weeks: int | None = None
+    prerequisites: list[str] | None = None
+    skills: list[str] | None = None
+    stages: list[dict[str, Any]] | None = None
+    is_published: bool | None = None
+    is_featured: bool | None = None
+
+
+# ----------------------------------------------------
+# Candidate 360 View (Feature 14)
+# ----------------------------------------------------
+class Candidate360Response(BaseModel):
+    user: dict[str, Any]
+    profile: dict[str, Any] | None = None
+    resume: dict[str, Any] | None = None
+    interviews: list[dict[str, Any]] = Field(default_factory=list)
+    coding_submissions: list[dict[str, Any]] = Field(default_factory=list)
+    learning_profile: dict[str, Any] | None = None
+    subscriptions: list[dict[str, Any]] = Field(default_factory=list)
+    payments: list[dict[str, Any]] = Field(default_factory=list)
+    support_tickets: list[dict[str, Any]] = Field(default_factory=list)
+    achievements: list[dict[str, Any]] = Field(default_factory=list)
+
+
+# ----------------------------------------------------
+# Candidate Dashboard Configuration (Feature 16)
+# ----------------------------------------------------
+class DashboardConfigSchema(BaseModel):
+    show_welcome: bool = True
+    show_readiness: bool = True
+    show_ats: bool = True
+    show_interview: bool = True
+    show_weak_topics: bool = True
+    show_daily_practice: bool = True
+    show_contests: bool = True
+    show_practice: bool = True
+    show_learning: bool = True
+    show_resources: bool = True
+    show_coding: bool = True
+    show_achievements: bool = True
+    show_subscription: bool = True
+    show_notifications: bool = True
+    show_support: bool = True
+    show_companies: bool = True
+

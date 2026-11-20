@@ -1,0 +1,61 @@
+{
+  "step11_candidate_experience": {
+    "A_dashboard_endpoints": {
+      "config_status": 200,
+      "featured_status": 200,
+      "summary_status": 500,
+      "status": "VERIFIED_WITH_DEFECT",
+      "note": "DEFECT-06 recorded: GET /dashboard/summary returns HTTP 500 due to AttributeError: Resume has no attribute created_at"
+    },
+    "B_C_assignment_states_and_buttons": {
+      "status": "VERIFIED",
+      "assigned_state": "ASSIGNED",
+      "in_progress_state": "IN_PROGRESS",
+      "completed_state": "COMPLETED",
+      "expired_state": "EXPIRED"
+    },
+    "D_direct_launch_matrix": {
+      "status": "VERIFIED",
+      "routes": {
+        "CODING_PROBLEM": "/coding",
+        "AI_INTERVIEW": "/interview-setup",
+        "INTERVIEW_TEMPLATE": "/interview-setup",
+        "QUESTION": "/practice",
+        "PRACTICE_SET": "/practice",
+        "CONTEST": "/contests",
+        "ROADMAP": "/learning",
+        "RESOURCE": "/learning or external URL",
+        "COMPANY_PREPARATION": "In-app Modal / Company Pack",
+        "CUSTOM_TASK": "In-app Modal",
+        "ASSESSMENT": "In-app Modal",
+        "MOCK_TEST": "In-app Modal / Practice"
+      }
+    },
+    "E_candidate_privacy": {
+      "status": "VERIFIED",
+      "cand_b_saw_cand_a_tasks": false
+    },
+    "F_full_candidate_workflow": {
+      "status": "VERIFIED",
+      "start_status": "IN_PROGRESS",
+      "submit_status": "COMPLETED",
+      "refresh_score": 94.0
+    },
+    "G_expired_assignment_rejection": {
+      "status": "VERIFIED",
+      "status_code": 400,
+      "response": "{\"detail\":\"Assignment has expired\"}"
+    },
+    "H_dashboard_regression": {
+      "status": "VERIFIED",
+      "ats_status": 200,
+      "companies_status": 200,
+      "resources_status": 200,
+      "subscription_plans_status": 200
+    }
+  },
+  "test_record_ids": {
+    "cand_a_id": "7bc98b14-cde0-4678-b4bd-1923aaf77612",
+    "cand_b_id": "799393e5-5638-4956-b99e-b37e703181f4"
+  }
+}

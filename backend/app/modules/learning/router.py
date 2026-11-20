@@ -375,3 +375,76 @@ async def get_learning_progress(
 ):
     progress = await LearningService.get_learning_progress(db, current_user.id)
     return progress
+
+
+# -------------------------------------------------------------
+# 10. Canonical Career Roadmaps (Admin-curated, candidate-consumed)
+# -------------------------------------------------------------
+@router.get(
+    "/canonical-roadmaps",
+    summary="List admin-curated career roadmaps",
+)
+async def list_candidate_roadmaps(
+    target_role: str | None = Query(default=None),
+    difficulty: str | None = Query(default=None),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    from app.modules.learning.model import CareerRoadmap
+    from sqlalchemy import select
+    query = select(CareerRoadmap).where(CareerRoadmap.is_published.is_(True))
+    if target_role:
+        query = query.where(CareerRoadmap.target_role.ilike(f"%{target_role}%"))
+    if difficulty:
+        query = query.where(CareerRoadmap.difficulty == difficulty)
+    res = await db.execute(query.order_by(CareerRoadmap.created_at.desc()))
+    roadmaps = res.scalars().all()
+    return [
+        {
+            "id": str(r.id),
+            "title": r.title,
+            "slug": r.slug,
+            "target_role": r.target_role,
+            "description": r.description,
+            "difficulty": r.difficulty,
+            "estimated_weeks": r.estimated_weeks,
+            "prerequisites": r.prerequisites,
+            "skills": r.skills,
+            "stages": r.stages,
+            "is_featured": r.is_featured,
+        }
+        for r in roadmaps
+    ]
+
+
+@router.get(
+    "/canonical-roadmaps/{roadmap_id}",
+    summary="Get details of a specific canonical career roadmap",
+)
+async def get_candidate_roadmap_detail(
+    roadmap_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    from app.modules.learning.model import CareerRoadmap
+    from sqlalchemy import select
+    res = await db.execute(
+        select(CareerRoadmap).where(CareerRoadmap.id == roadmap_id, CareerRoadmap.is_published.is_(True))
+    )
+    r = res.scalar_one_or_none()
+    if not r:
+        raise HTTPException(status_code=404, detail="Career roadmap not found")
+    return {
+        "id": str(r.id),
+        "title": r.title,
+        "slug": r.slug,
+        "target_role": r.target_role,
+        "description": r.description,
+        "difficulty": r.difficulty,
+        "estimated_weeks": r.estimated_weeks,
+        "prerequisites": r.prerequisites,
+        "skills": r.skills,
+        "stages": r.stages,
+        "is_featured": r.is_featured,
+    }
+

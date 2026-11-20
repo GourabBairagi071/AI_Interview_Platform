@@ -34,6 +34,7 @@ from app.modules.payments.schema import (
     VerifyPaymentResponse,
 )
 from app.modules.payments.service import (
+    CANDIDATE_PLAN_SLUGS,
     activate_subscription,
     cancel_subscription,
     create_invoice,
@@ -86,8 +87,8 @@ def get_razorpay_client() -> razorpay.Client | None:
 async def list_plans(
     db: AsyncSession = Depends(get_db),
 ):
-    """Return all active subscription plans."""
-    plans = await get_active_plans(db)
+    """Return the official candidate subscription plans (Free, Pro, Premium)."""
+    plans = await get_active_plans(db, candidate_only=True)
     return plans
 
 
@@ -135,7 +136,7 @@ async def create_order(
                 detail="Plan not found",
             )
 
-        if not plan.is_active:
+        if not plan.is_active or plan.slug not in CANDIDATE_PLAN_SLUGS:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="This plan is no longer available",
@@ -175,8 +176,8 @@ async def create_order(
         final_amount = data.amount
         currency = data.currency or "INR"
 
-        # Associate with first active plan to satisfy database relation
-        active_plans = await get_active_plans(db)
+        # Associate with first active candidate plan to satisfy database relation
+        active_plans = await get_active_plans(db, candidate_only=True)
         plan = next((p for p in active_plans if p.price > 0), None)
         if not plan and active_plans:
             plan = active_plans[0]
